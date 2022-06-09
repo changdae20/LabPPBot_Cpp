@@ -2,6 +2,8 @@
 
 namespace Util {
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame ) {
+    auto [ width, height ] = frame.size();
+    cv::resize( frame, frame, cv::Size( ( width + 2 ) - ( width + 2 ) % 4, ( height + 2 ) - ( height + 2 ) % 4 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
     auto convertOpenCVBitDepthToBits = []( const int32_t value ) {
         auto regular = 0u;
 
