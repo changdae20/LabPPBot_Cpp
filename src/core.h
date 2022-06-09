@@ -8,6 +8,8 @@
 #include <utility>
 #include <windows.h>
 
+#include <opencv2/imgproc.hpp>
+
 enum class RETURN_CODE {
     UPDATE,
     CLEAR,

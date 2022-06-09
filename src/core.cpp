@@ -38,9 +38,11 @@ void kakao_sendimage( const std::string &chatroom_name ) {
         std::cout << "Chatroom Not Opened!\n";
     } else {
         auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
+        SetForegroundWindow( child_wnd );
         PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        Sleep( 50 );
+        Sleep( 100 );
         SendReturn( GetForegroundWindow() );
+        Sleep( 50 );
     }
 }
 
@@ -192,6 +194,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
                 const auto jacket_response = jacket_request.send( "GET" );
                 auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                cv::resize( frame, frame, cv::Size( 600, 600 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
                 auto bmp = Util::ConvertCVMatToBMP( frame );
                 if ( Util::PasteBMPToClipboard( bmp ) ) {
                     kakao_sendimage( chatroom_name );
