@@ -1,0 +1,8 @@
+build/
+.vscode/
+src/protobuf/*.pb.*
+bin/
+src/config.json
+cmake/
+lib/
+vcpkg/

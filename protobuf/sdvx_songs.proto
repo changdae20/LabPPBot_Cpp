@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package db;
+
+message SdvxSong {
+    int32 id = 1;
+    string title = 2;
+    string nick1 = 3;
+    string nick2 = 4;
+    string nick3 = 5;
+
+    int32 level = 6;
+    string code = 7;
+    string bpm = 8;
+
+    string artist = 9;
+    string effector = 10;
+    string illustrator = 11;
+
+    int32 chain_v = 12;
+    int32 chain_vi = 13;
+}
+
+message SdvxList{
+    SdvxSong sdvxsongs = 1;
+}
