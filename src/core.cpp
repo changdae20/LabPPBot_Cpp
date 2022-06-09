@@ -169,36 +169,40 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
     }
     if ( msg.rfind( u"/곡정보", 0 ) == 0 ) {
         auto args = Util::split( msg, " " );
+        http::Response response;
         if ( args.size() == 2 && args[ 1 ] != u"" ) { // /곡정보 별명
             http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) };
-            const auto response = request.send( "GET" );
-            const std::string res_text = std::string( response.body.begin(), response.body.end() );
-            if ( res_text == "{}" ) { // 검색 결과가 없는 경우
-                kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
-            } else {
-                std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
-                replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
-                db::SdvxSong song;
-                google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
-                kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
-                                                   u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
-                                                   u"\n작곡가 : " + Util::UTF8toUTF16( song.artist() ) +
-                                                   u"\n이펙터 : " + Util::UTF8toUTF16( song.effector() ) +
-                                                   u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
-                                                   u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
-                                                   u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) );
+            response = request.send( "GET" );
+        } else if ( args.size() == 3 && args[ 1 ] != u"" && args[ 2 ] != u"" ) { // /곡정보 별명 레벨
+            http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) + "&kind=" + Util::URLEncode( ( args[ 2 ] ) ) };
+            response = request.send( "GET" );
+        }
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+        if ( res_text == "{}" ) { // 검색 결과가 없는 경우
+            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            // TODO : 검색통해서 ~~~를 찾으시나요? 출력
+        } else {
+            std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
+            replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+            db::SdvxSong song;
+            google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
+            kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
+                                               u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
+                                               u"\n작곡가 : " + Util::UTF8toUTF16( song.artist() ) +
+                                               u"\n이펙터 : " + Util::UTF8toUTF16( song.effector() ) +
+                                               u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
+                                               u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
+                                               u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) );
 
-                std::string lower_code;
-                std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
-                http::Request jacket_request{ __config.storage_server() + "songs/" + lower_code + "/jacket.png" };
+            std::string lower_code;
+            std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
+            http::Request jacket_request{ __config.storage_server() + "songs/" + lower_code + "/jacket.png" };
 
-                const auto jacket_response = jacket_request.send( "GET" );
-                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-                cv::resize( frame, frame, cv::Size( 600, 600 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
-                auto bmp = Util::ConvertCVMatToBMP( frame );
-                if ( Util::PasteBMPToClipboard( bmp ) ) {
-                    kakao_sendimage( chatroom_name );
-                }
+            const auto jacket_response = jacket_request.send( "GET" );
+            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
             }
         }
     }
