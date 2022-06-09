@@ -164,9 +164,50 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
     }
 
     if ( msg == u"/자라" ) {
-        kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
+        if( Util::rand( 1, 100 ) == 100 ) {
+            kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
+        }else{
+            kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
+        }
         return RETURN_CODE::OK;
     }
+
+    if ( msg == u"/자라자라" ) {
+        if ( std::ifstream( "src/zara_data.json" ).fail() ){
+            std::cout << "Fail!" << std::endl;
+            std::ofstream o( "src/zara_data.json" );
+            o << "{\"dict\":{}}";
+        }
+        std::string json;
+        std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
+        turtle::zara_data data;
+        google::protobuf::util::JsonStringToMessage( json, &data );
+        std::cout << json << std::endl;
+
+        std::cout << __LINE__ << std::endl;
+        for (auto [key, value] : data.dict()){
+            std::cout << key << " : " << value << std::endl;
+        }
+        std::cout << __LINE__ << " | " << (data.dict().find( Util::UTF16toUTF8(name) ) == data.dict().end()) << std::endl;
+        if( (data.dict().find( Util::UTF16toUTF8(name) ) != data.dict().end()) && (data.dict().at( Util::UTF16toUTF8(name) ) > std::time(NULL) - 3600*5)){ // 쿨이 안돈 경우
+            kakao_sendtext( chatroom_name, std::u16string( u"아직 연속자라를 사용할 수 없습니다 : x시간 x분 x초 남음" ) );
+        }else{
+            kakao_sendtext( chatroom_name, std::u16string( u"대충 자라거북이" ) );
+        }
+        (*data.mutable_dict())[Util::UTF16toUTF8(name)] = std::time(NULL);
+        json.clear();
+        std::ofstream o( "src/zara_data.json" );
+        google::protobuf::util::MessageToJsonString( data, &json );
+        std::cout << json << std::endl;
+        o << json;
+        // if( Util::rand( 1, 100 ) == 100 ) {
+        //     kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
+        // }else{
+        //     kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
+        // }
+        return RETURN_CODE::OK;
+    }
+
     if ( msg.rfind( u"/곡정보", 0 ) == 0 ) {
         auto args = Util::split( msg, " " );
         http::Response response;

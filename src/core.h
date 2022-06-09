@@ -2,8 +2,11 @@
 #define CORE_H
 
 #include "protobuf/config.pb.h"
+#include "protobuf/turtle.pb.h"
 #include "protobuf/sdvx_songs.pb.h"
+#include <ctime>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <windows.h>

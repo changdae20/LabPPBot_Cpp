@@ -1,6 +1,12 @@
 #include "util.h"
 
 namespace Util {
+int rand(int start, int end){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dist(start,end);
+    return dist(gen);
+}
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame ) {
     auto [ width, height ] = frame.size();
     cv::resize( frame, frame, cv::Size( ( width + 2 ) - ( width + 2 ) % 4, ( height + 2 ) - ( height + 2 ) % 4 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application

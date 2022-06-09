@@ -4,6 +4,7 @@
 #include <regex>
 #include <string>
 #include <vector>
+#include <random>
 
 // UTF-8,16 LIB
 #include "checked.h"
@@ -15,6 +16,7 @@
 #include <opencv2/imgproc.hpp>
 
 namespace Util {
+int rand(int start, int end);
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame );
 bool PasteBMPToClipboard( void *bmp );
 std::string TOUTF8( std::string &multibyte_str );
