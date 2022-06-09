@@ -15,8 +15,9 @@ enum class RETURN_CODE {
     ERR
 };
 
-void SendReturn( HWND &hwnd );
+void SendReturn( HWND hwnd );
 void kakao_sendtext( const std::string &chatroom_name, const std::u16string &text );
+void kakao_sendimage( const std::string &chatroom_name );
 
 void PostKeyEx( HWND &hwnd, UINT key, WPARAM shift, bool specialkey );
 

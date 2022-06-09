@@ -12,7 +12,7 @@
 
 extern config::Config __config;
 
-void SendReturn( HWND &hwnd ) {
+void SendReturn( HWND hwnd ) {
     PostMessage( hwnd, WM_KEYDOWN, VK_RETURN, 0 );
     Sleep( 10 );
     PostMessage( hwnd, WM_KEYUP, VK_RETURN, 0 );
@@ -29,6 +29,18 @@ void kakao_sendtext( const std::string &chatroom_name, const std::u16string &tex
         // std::cout << child_wnd << std::endl;
         ::SendMessageW( child_wnd, WM_SETTEXT, 0, reinterpret_cast<LPARAM>( text.c_str() ) );
         SendReturn( child_wnd );
+    }
+}
+
+void kakao_sendimage( const std::string &chatroom_name ) {
+    HWND hwnd = ::FindWindowA( NULL, reinterpret_cast<LPCSTR>( chatroom_name.c_str() ) );
+    if ( hwnd == nullptr ) {
+        std::cout << "Chatroom Not Opened!\n";
+    } else {
+        auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
+        PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
+        Sleep( 50 );
+        SendReturn( GetForegroundWindow() );
     }
 }
 
@@ -173,6 +185,17 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                                                    u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
                                                    u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
                                                    u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) );
+
+                std::string lower_code;
+                std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
+                http::Request jacket_request{ __config.storage_server() + "songs/" + lower_code + "/jacket.png" };
+
+                const auto jacket_response = jacket_request.send( "GET" );
+                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto bmp = Util::ConvertCVMatToBMP( frame );
+                if ( Util::PasteBMPToClipboard( bmp ) ) {
+                    kakao_sendimage( chatroom_name );
+                }
             }
         }
     }

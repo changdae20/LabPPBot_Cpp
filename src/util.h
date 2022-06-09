@@ -10,7 +10,12 @@
 #include "utf8_core.h"
 #include <Windows.h>
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+
 namespace Util {
+HBITMAP ConvertCVMatToBMP( cv::Mat &frame );
+bool PasteBMPToClipboard( void *bmp );
 std::string TOUTF8( std::string &multibyte_str );
 std::string URLEncode( const std::string &str );
 std::string URLEncode( const std::u16string &u16str );

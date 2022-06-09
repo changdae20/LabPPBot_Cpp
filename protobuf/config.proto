@@ -5,4 +5,5 @@ package config;
 message Config {
     string chatroom_name = 1;
     string api_endpoint = 2;
+    string storage_server = 3;
 }
