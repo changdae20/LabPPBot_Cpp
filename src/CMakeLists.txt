@@ -15,6 +15,9 @@ link_directories(
 )
 
 set(protobuf_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/protobuf_x64-windows/share/protobuf)
+set(fmt_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/fmt_x64-windows/share)
+
+find_package(fmt CONFIG REQUIRED)
 
 SET(LabPPBot_Cpp_LIB
     COMPILED_PROTOBUF
@@ -49,4 +52,5 @@ target_link_libraries(${PROJECT_NAME}
     libprotoc 
     libprotobuf 
     libprotobuf-lite
+    fmt::fmt
 )

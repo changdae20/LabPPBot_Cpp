@@ -1,4 +1,6 @@
 ﻿#include <algorithm>
+#include <fmt/core.h>
+#include <fmt/xchar.h>
 #include <google/protobuf/util/json_util.h>
 #include <iostream>
 #include <regex>
@@ -164,16 +166,16 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
     }
 
     if ( msg == u"/자라" ) {
-        if( Util::rand( 1, 100 ) == 100 ) {
+        if ( Util::rand( 1, 100 ) == 100 ) {
             kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
-        }else{
+        } else {
             kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
         }
         return RETURN_CODE::OK;
     }
 
     if ( msg == u"/자라자라" ) {
-        if ( std::ifstream( "src/zara_data.json" ).fail() ){
+        if ( std::ifstream( "src/zara_data.json" ).fail() ) {
             std::cout << "Fail!" << std::endl;
             std::ofstream o( "src/zara_data.json" );
             o << "{\"dict\":{}}";
@@ -185,16 +187,20 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::cout << json << std::endl;
 
         std::cout << __LINE__ << std::endl;
-        for (auto [key, value] : data.dict()){
+        for ( auto [ key, value ] : data.dict() ) {
             std::cout << key << " : " << value << std::endl;
         }
-        std::cout << __LINE__ << " | " << (data.dict().find( Util::UTF16toUTF8(name) ) == data.dict().end()) << std::endl;
-        if( (data.dict().find( Util::UTF16toUTF8(name) ) != data.dict().end()) && (data.dict().at( Util::UTF16toUTF8(name) ) > std::time(NULL) - 3600*5)){ // 쿨이 안돈 경우
-            kakao_sendtext( chatroom_name, std::u16string( u"아직 연속자라를 사용할 수 없습니다 : x시간 x분 x초 남음" ) );
-        }else{
+        std::cout << __LINE__ << " | " << ( data.dict().find( Util::UTF16toUTF8( name ) ) == data.dict().end() ) << std::endl;
+        if ( ( data.dict().find( Util::UTF16toUTF8( name ) ) != data.dict().end() ) && ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] > std::time( NULL ) - 3600 * 5 ) { // 쿨이 안돈 경우
+            int sec = ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] + 3600 * 5 - std::time( NULL );
+            int hour = sec / 3600;
+            int min = ( sec - hour * 3600 ) / 60;
+            sec %= 60;
+            kakao_sendtext( chatroom_name, fmt::format( u"아직 연속자라를 사용할 수 없습니다 : {}시간 {}분 {}초 남음", hour, min, sec ) );
+        } else {
             kakao_sendtext( chatroom_name, std::u16string( u"대충 자라거북이" ) );
         }
-        (*data.mutable_dict())[Util::UTF16toUTF8(name)] = std::time(NULL);
+        ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] = std::time( NULL );
         json.clear();
         std::ofstream o( "src/zara_data.json" );
         google::protobuf::util::MessageToJsonString( data, &json );

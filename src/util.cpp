@@ -1,11 +1,11 @@
 #include "util.h"
 
 namespace Util {
-int rand(int start, int end){
+int rand( int start, int end ) {
     std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dist(start,end);
-    return dist(gen);
+    std::mt19937 gen( rd() );
+    std::uniform_int_distribution<> dist( start, end );
+    return dist( gen );
 }
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame ) {
     auto [ width, height ] = frame.size();

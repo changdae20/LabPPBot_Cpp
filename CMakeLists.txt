@@ -90,6 +90,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}/src/protobuf
   ${CMAKE_SOURCE_DIR}/vcpkg/packages/protobuf_x64-windows/include
+  ${CMAKE_SOURCE_DIR}/vcpkg/packages/fmt_x64-windows/include
 )
 
 # INCLUDE_DIRECTORIES
@@ -100,6 +101,7 @@ endforeach()
 
 link_directories(
     ${CMAKE_SOURCE_DIR}/vcpkg/packages/protobuf_x64-windows/lib
+    ${CMAKE_SOURCE_DIR}/vcpkg/packages/fmt-windows/include
 )
 
 ###########################################
