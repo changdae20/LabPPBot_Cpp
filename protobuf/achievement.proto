@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package db;
+
+message Achievement {
+    int32 id = 1;
+    string type = 2;
+    string tag = 3;
+    string name = 4;
+    string description = 5;
+
+    int32 counter_id = 6;
+    int32 goal_counter = 7;
+}
+
+message AchievementUser {
+    int32 id = 1;
+    string name = 2;
+    int32 achievements_id = 3;
+    string createdAt = 4;
+}
+
+message AchievementList{
+    repeated Achievement achievements = 1;
+}
+
+message AchievementInfo{
+    Achievement achievement = 1;
+    repeated AchievementUser achievement_user_list = 2;
+}

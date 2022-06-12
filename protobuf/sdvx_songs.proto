@@ -22,5 +22,5 @@ message SdvxSong {
 }
 
 message SdvxList{
-    SdvxSong sdvxsongs = 1;
+    repeated SdvxSong sdvxsongs = 1;
 }

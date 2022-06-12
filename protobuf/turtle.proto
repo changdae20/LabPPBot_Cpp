@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package turtle;
 
-message zara_data {
+message ZaraData {
     map<string, int64> dict = 1;
     int32 age = 2;
 }
