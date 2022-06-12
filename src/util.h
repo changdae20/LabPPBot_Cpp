@@ -4,6 +4,7 @@
 #include <random>
 #include <regex>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // UTF-8,16 LIB
@@ -15,7 +16,15 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+template <typename Test, template <typename...> class Ref>
+struct is_specialization : std::false_type {};
+
+template <template <typename...> class Ref, typename... Args>
+struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
+
 namespace Util {
+template <typename T, typename UnaryOperation>
+std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::string a, UnaryOperation unary_op );
 int rand( int start, int end );
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame );
 bool PasteBMPToClipboard( void *bmp );

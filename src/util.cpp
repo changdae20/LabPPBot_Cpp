@@ -1,12 +1,46 @@
 #include "util.h"
 
 namespace Util {
+template <typename T, typename UnaryOperation>
+std::enable_if_t<is_specialization<T, std::vector>::value, T> parse( std::string a, UnaryOperation unary_op ) {
+    T ans;
+    if ( a.length() < 2 || a[ 0 ] != '[' || a[ a.length() - 1 ] != ']' )
+        return ans; // Error Case
+    if ( a == "[]" )
+        return ans; // Base Case
+
+    if constexpr ( is_specialization<T::value_type, std::vector>::value ) { // 2D이상의 vector로 parse하는 경우 recursive하게 구현
+        int count = 0;                                                      // opening bracket '['과 closing bracket ']'의 개수 차이를 count함.
+        std::string::iterator start;
+        for ( auto it = a.begin() + 1; it < a.end() - 1; ++it ) {
+            if ( ( *it ) == '[' ) {
+                if ( count == 0 ) {
+                    start = it;
+                }
+                count++;
+            } else if ( ( *it ) == ']' ) {
+                count--;
+                if ( count == 0 ) {
+                    ans.push_back( parse<T::value_type>( std::string( start, ++it ), unary_op ) );
+                }
+            }
+        }
+        return ans;
+    } else { // base case
+        std::regex re( "," );
+        std::sregex_token_iterator it( a.begin() + 1, a.end() - 1, re, -1 ), end;
+        std::transform( it, end, std::back_inserter( ans ), unary_op );
+        return ans;
+    }
+}
+
 int rand( int start, int end ) {
     std::random_device rd;
     std::mt19937 gen( rd() );
     std::uniform_int_distribution<> dist( start, end );
     return dist( gen );
 }
+
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame ) {
     auto [ width, height ] = frame.size();
     cv::resize( frame, frame, cv::Size( ( width + 2 ) - ( width + 2 ) % 4, ( height + 2 ) - ( height + 2 ) % 4 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
