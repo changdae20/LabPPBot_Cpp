@@ -1,4 +1,5 @@
 ﻿#include <algorithm>
+#include <array>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
 #include <google/protobuf/util/json_util.h>
@@ -13,6 +14,9 @@
 #include "util.h"
 
 extern config::Config __config;
+
+std::u16string quiz_answer;
+std::vector<std::u16string> hint_request;
 
 void SendReturn( HWND hwnd ) {
     PostMessage( hwnd, WM_KEYDOWN, VK_RETURN, 0 );
@@ -91,6 +95,42 @@ void PostKeyEx( HWND &hwnd, UINT key, WPARAM shift, bool specialkey ) {
     return;
 }
 
+void achievement_count( const std::u16string &name, int counter_id, int val ) {
+    http::Request request{ __config.api_endpoint() + "counter" };
+    const std::string body = fmt::format( "name={}&counter_id={}&counter_value={}", Util::URLEncode( name ), counter_id, val );
+    auto response = request.send( "POST", body, { { "Content-Type", "application/x-www-form-urlencoded" } } );
+    db::AchievementList list;
+    std::string res_text = std::string( response.body.begin(), response.body.end() );
+    auto replaced = "{\"achievements\" : " + std::regex_replace( res_text, std::regex( "goal_counter" ), "goalCounter" ) + "}";
+    google::protobuf::util::JsonStringToMessage( replaced.c_str(), &list );
+
+    for ( const auto &achievement : list.achievements() ) {
+        if ( achievement.type() == "normal" ) { // normal 업적의 경우 그냥 출력하면 됨
+            kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) );
+        }
+
+        if ( achievement.type() == "hidden" ) { // hidden 업적의 경우 달성 유저가 3명이상인 경우에만 설명 출력
+            request = http::Request{ fmt::format( "{}achievements/achievement_info?achievements_id={}", __config.api_endpoint(), achievement.id() ) };
+            response = request.send( "GET" );
+            res_text = std::string( response.body.begin(), response.body.end() );
+            auto replaced = std::regex_replace( res_text, std::regex( "counter_id" ), "counterId" );
+            replaced = std::regex_replace( res_text, std::regex( "goal_counter" ), "goalCounter" );
+            replaced = std::regex_replace( res_text, std::regex( "achieved_user_list" ), "achievedUserList" );
+            replaced = std::regex_replace( res_text, std::regex( "achievements_id" ), "achievementsId" );
+
+            db::AchievementInfo info;
+            google::protobuf::util::JsonStringToMessage( replaced.c_str(), &info );
+
+            if ( info.achievement_user_list_size() >= 3 ) {
+                kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) );
+            } else {
+                auto replaced_description = std::regex_replace( achievement.description(), std::regex( "[^\\s]" ), "?" );
+                kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( replaced_description ) ) );
+            }
+        }
+    }
+    return;
+}
 std::u16string GetClipboardText_Utf16() {
     std::u16string strData;
 
@@ -166,7 +206,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
     }
 
     if ( msg == u"/자라" ) {
-        if ( Util::rand( 1, 100 ) == 100 ) {
+        if ( Util::rand( 1, 100 ) == 100 ) { // 1%
             kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
         } else {
             kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
@@ -182,35 +222,58 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         std::string json;
         std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
-        turtle::zara_data data;
+        turtle::ZaraData data;
         google::protobuf::util::JsonStringToMessage( json, &data );
-        std::cout << json << std::endl;
 
-        std::cout << __LINE__ << std::endl;
-        for ( auto [ key, value ] : data.dict() ) {
-            std::cout << key << " : " << value << std::endl;
-        }
-        std::cout << __LINE__ << " | " << ( data.dict().find( Util::UTF16toUTF8( name ) ) == data.dict().end() ) << std::endl;
         if ( ( data.dict().find( Util::UTF16toUTF8( name ) ) != data.dict().end() ) && ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] > std::time( NULL ) - 3600 * 5 ) { // 쿨이 안돈 경우
             int sec = ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] + 3600 * 5 - std::time( NULL );
             int hour = sec / 3600;
-            int min = ( sec - hour * 3600 ) / 60;
+            int min = ( sec % 3600 ) / 60;
             sec %= 60;
             kakao_sendtext( chatroom_name, fmt::format( u"아직 연속자라를 사용할 수 없습니다 : {}시간 {}분 {}초 남음", hour, min, sec ) );
-        } else {
-            kakao_sendtext( chatroom_name, std::u16string( u"대충 자라거북이" ) );
+        } else {                                                                        // 쿨이 돈 경우
+            std::array<std::u16string, 5> arr;                                          // 5번 가챠 결과 담는 컨테이너
+            std::vector<int> ages;                                                      // 가챠 성공결과 담는 컨테이너
+            bool is_quiz = ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] == -1; // 퀴즈로 쿨초받은 경우 -1로 세팅되어있음.
+            for ( auto &el : arr ) {
+                if ( Util::rand( 1, 100 ) == 100 ) { // 1%
+                    el = u"거북이";
+                    ages.push_back( data.age() );
+                    data.set_age( 0 );
+                } else {
+                    data.set_age( data.age() + 1 );
+                    el = u"자라";
+                }
+            }
+
+            kakao_sendtext( chatroom_name, fmt::format( u"{}\n{}\n{}\n{}\n{}", arr[ 0 ], arr[ 1 ], arr[ 2 ], arr[ 3 ], arr[ 4 ] ) );
+
+            if ( ages.size() > 0 ) {                                              // 가챠로 먹은 경우
+                if ( std::find( ages.begin(), ages.end(), 100 ) != ages.end() ) { // 정확하게 100살짜리를 먹은 경우
+                    achievement_count( name, 28, 1 );
+                }
+                auto [ min, max ] = std::minmax( ages.begin(), ages.end() );
+                achievement_count( name, 7, *max );
+                achievement_count( name, 8, *min );
+                if ( ages.size() >= 2 ) { // 쌍거북 이상의 경우
+                    achievement_count( name, 7 + ages.size(), 1 );
+                }
+                if ( is_quiz ) { // 퀴즈 거북인 경우
+                    achievement_count( name, 3, ages.size() );
+                } else { // normal case
+                    achievement_count( name, 1, ages.size() );
+                }
+            }
+
+            achievement_count( name, 5, 1 );               // 쿨이 돈 연챠를 실행
+            achievement_count( name, 6, 5 - ages.size() ); // 거북이 먹은 개수 추가
+            ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] = std::time( NULL );
+            json.clear();
+            google::protobuf::util::MessageToJsonString( data, &json );
+            std::ofstream o( "src/zara_data.json" );
+            o << json;
         }
-        ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] = std::time( NULL );
-        json.clear();
-        std::ofstream o( "src/zara_data.json" );
-        google::protobuf::util::MessageToJsonString( data, &json );
-        std::cout << json << std::endl;
-        o << json;
-        // if( Util::rand( 1, 100 ) == 100 ) {
-        //     kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
-        // }else{
-        //     kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
-        // }
+
         return RETURN_CODE::OK;
     }
 

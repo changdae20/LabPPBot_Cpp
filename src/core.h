@@ -1,6 +1,7 @@
 #ifndef CORE_H
 #define CORE_H
 
+#include "protobuf/achievement.pb.h"
 #include "protobuf/config.pb.h"
 #include "protobuf/sdvx_songs.pb.h"
 #include "protobuf/turtle.pb.h"
@@ -25,6 +26,8 @@ void kakao_sendtext( const std::string &chatroom_name, const std::u16string &tex
 void kakao_sendimage( const std::string &chatroom_name );
 
 void PostKeyEx( HWND &hwnd, UINT key, WPARAM shift, bool specialkey );
+
+void achievement_count( const std::u16string &name, int counter_id, int val );
 
 std::u16string GetClipboardText_Utf16();
 
