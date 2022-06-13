@@ -277,6 +277,23 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
+    if ( msg == u"/인벤" || msg == u"/인벤토리" ) { // 자신의 인벤
+        http::Request request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
+        auto response = request.send( "GET" );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
+        std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":(-[0-9]+),\"29\":([0-9]+)\\}" );
+        std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
+        std::vector<std::u16string> tokens;
+        for ( ; it != end; ++it )
+            tokens.push_back( Util::UTF8toUTF16( *it ) );
+
+        tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
+        tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
+
+        kakao_sendtext( chatroom_name, fmt::format( u"연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+    }
+
     if ( msg.rfind( u"/곡정보", 0 ) == 0 ) {
         auto args = Util::split( msg, " " );
         http::Response response;
@@ -316,5 +333,6 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             }
         }
     }
+
     return RETURN_CODE::OK;
 }
