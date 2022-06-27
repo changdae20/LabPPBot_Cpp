@@ -101,7 +101,6 @@ endforeach()
 
 link_directories(
     ${CMAKE_SOURCE_DIR}/vcpkg/packages/protobuf_x64-windows/lib
-    ${CMAKE_SOURCE_DIR}/vcpkg/packages/fmt-windows/include
 )
 
 ###########################################
