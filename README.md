@@ -5,7 +5,7 @@ Automated bot written in C++ for KakaoTalk messenger, working on Windows OS
 | :---:   |      :---:     | :---:      |
 | Status | [![Status](https://github.com/changdae20/LabPPBot_Cpp/actions/workflows/formatting.yml/badge.svg)](https://github.com/changdae20/LabPPBot_Cpp/actions) | [![Status](https://github.com/changdae20/LabPPBot_Cpp/actions/workflows/main.yml/badge.svg)](https://github.com/changdae20/LabPPBot_Cpp/actions) |
 
-업뎃테스트1
+업뎃테스트12
 # License
 
 **The MIT License (MIT)**
