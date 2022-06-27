@@ -309,6 +309,34 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+
+        http::Request request{ __config.api_endpoint() + "member?chatroom_name=" + Util::URLEncode( __config.chatroom_name() ) };
+        auto response = request.send( "GET" );
+        std::string res_text = std::string( response.body.begin(), response.body.end() );
+        if ( res_text == "[]" ) { // DB에 해당 단체방에 대한 정보가 없음
+            kakao_sendtext( chatroom_name, u"지원하지 않는 단체방입니다." );
+        } else {
+            auto splitted = Util::split( Util::UTF8toUTF16( std::string( res_text.begin() + 1, res_text.end() - 1 ) ), "," );
+            if ( std::find( splitted.begin(), splitted.end(), fmt::format( u"\"{}\"", query_name ) ) != splitted.end() ) { // 멤버를 찾음
+                request = http::Request( fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( query_name ) ) );
+                response = request.send( "GET" );
+                res_text = std::string( response.body.begin(), response.body.end() );
+                std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":(-[0-9]+),\"29\":([0-9]+)\\}" );
+                std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
+                std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
+                std::vector<std::u16string> tokens;
+                for ( ; it != end; ++it )
+                    tokens.push_back( Util::UTF8toUTF16( *it ) );
+
+                tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
+                tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
+
+                kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", query_name, tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+            } else {
+                kakao_sendtext( chatroom_name, u"단체방 멤버를 찾을 수 없습니다." );
+            }
+        }
     }
 
     if ( msg.rfind( u"/곡정보 ", 0 ) == 0 ) {
