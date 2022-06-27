@@ -195,6 +195,8 @@ std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std
             for ( ; it != end; ++it )
                 tokens.push_back( Util::UTF8toUTF16( *it ) );
             auto ret = execute_command( chatroom_name, tokens[ 0 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ] );
+            if ( ret == RETURN_CODE::UPDATE )
+                return std::pair( u"Update", -1 );
         }
         return std::pair( splitted.at( splitted.size() - 1 ), last_idx + splitted.size() );
     }
@@ -292,9 +294,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
 
         kakao_sendtext( chatroom_name, fmt::format( u"연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+    } else if ( msg.rfind( u"/인벤 ", 0 ) == 0 || msg.rfind( u"/인벤토리 ", 0 ) == 0 ) { // 타인의 인벤
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
     }
 
-    if ( msg.rfind( u"/곡정보", 0 ) == 0 ) {
+    if ( msg.rfind( u"/곡정보 ", 0 ) == 0 ) {
         auto args = Util::split( msg, " " );
         http::Response response;
         if ( args.size() == 2 && args[ 1 ] != u"" ) { // /곡정보 별명
@@ -334,5 +340,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg == u"/업데이트" && name == u"손창대" ) {
+        kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
+        return RETURN_CODE::UPDATE;
+    }
     return RETURN_CODE::OK;
 }
