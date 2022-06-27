@@ -11,7 +11,6 @@
 #include <string>
 #include <vector>
 
-
 std::string exec( const char *cmd ) {
     std::array<char, 128> buffer;
     std::string result;
@@ -42,6 +41,7 @@ int main() {
             if ( update_result == "Already up to date.\n" ) { // 이미 최신버전인 경우
                 status = "Up To Date";
             } else { // 업데이트가 있는 경우
+                system( ".\\build.bat" ); // 새로 빌드
                 auto new_log_raw = exec( "git log --format=%s" );
                 std::regex re( "\n" );
                 std::sregex_token_iterator it( new_log_raw.begin(), new_log_raw.end() - 1, re, -1 ), end;
