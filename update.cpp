@@ -1,4 +1,4 @@
-#include <Windows.h>
+﻿#include <Windows.h>
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -25,9 +25,9 @@ std::string exec( const char *cmd ) {
 }
 
 int main() {
-    std::string status = "initial";
+    std::wstring status = L"initial";
     while ( true ) {
-        int status_code = system( std::string( ".\\bin\\Release\\main.exe \"" + status + "\"" ).c_str() );
+        int status_code = _wsystem( std::wstring( L".\\bin\\Release\\main.exe \"" + status + L"\"" ).c_str() );
         if ( status_code == 0 ) { // 일반적인 종료
             continue;
         } else if ( status_code == 1 ) { // 업데이트 요청
@@ -39,8 +39,8 @@ int main() {
             auto update_result = exec( "git pull" );
 
             if ( update_result == "Already up to date.\n" ) { // 이미 최신버전인 경우
-                status = "Up To Date";
-            } else { // 업데이트가 있는 경우
+                status = L"Up To Date";
+            } else {                      // 업데이트가 있는 경우
                 system( ".\\build.bat" ); // 새로 빌드
                 auto new_log_raw = exec( "git log --format=%s" );
                 std::regex re( "\n" );
@@ -48,7 +48,7 @@ int main() {
                 std::vector<std::string> new_log( it, end );
                 new_log.erase( new_log.begin() + ( new_log.size() - old_log.size() ), new_log.end() );
                 std::string logs = std::accumulate( new_log.begin(), new_log.end(), std::string( "" ), []( auto &a, auto &b ) { return a + b + "\n"; } ); // join with newline
-                status = logs.substr( logs.length() - 1 );
+                status.assign( logs.begin(), logs.end() - 1 );
             }
         }
     }

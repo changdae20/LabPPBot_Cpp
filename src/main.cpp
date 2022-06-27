@@ -21,19 +21,26 @@ enum class STATUS { // Loop가 끝났을 때 반환하는 Status Code
 
 config::Config __config;
 
-int main( int argc, char *argv[] ) {
+int wmain( int argc, wchar_t *argv[] ) {
     std::string json;
     std::getline( std::ifstream( "src/config.json" ), json, '\0' );
     google::protobuf::util::JsonStringToMessage( json, &__config );
     auto &[ last_chat, last_idx ] = save_last_chat( __config.chatroom_name() );
 
-    if ( argc > 1 && argv[ 1 ] == std::string( "Up To Date" ) ) {
+    if ( argc > 1 && argv[ 1 ] == std::wstring( L"Up To Date" ) ) {
         kakao_sendtext( __config.chatroom_name(), u"이미 최신 버전입니다." );
-    } else if ( argc > 1 && ( argv[ 1 ] != std::string( "Up To Date" ) && argv[ 1 ] != std::string( "initial" ) ) ) {
-        auto logs = Util::split( Util::UTF8toUTF16( std::string( argv[ 1 ] ) ), "\n" );
+    } else if ( argc > 1 && ( argv[ 1 ] != std::wstring( L"Up To Date" ) && argv[ 1 ] != std::wstring( L"initial" ) ) ) {
+        std::string logs_raw;
+        std::wstring t( argv[ 1 ] );
+
+        logs_raw.assign( t.begin(), t.end() );
+        std::regex re( "\n" );
+        std::sregex_token_iterator token_it( logs_raw.begin(), logs_raw.end(), re, -1 ), end;
+        std::vector<std::string> logs( token_it, end );
+        kakao_sendtext( __config.chatroom_name(), Util::UTF8toUTF16( logs_raw ) );
         std::u16string log = u"업데이트가 완료되었습니다.\n\n[업데이트 목록]\n";
         for ( auto it = logs.rbegin(); it != logs.rend(); ++it ) {
-            log += Util::UTF8toUTF16( std::to_string( std::distance( logs.rbegin(), it ) + 1 ) ) + u". " + *it + u"\n";
+            log += Util::UTF8toUTF16( std::to_string( std::distance( logs.rbegin(), it ) + 1 ) ) + std::u16string( u". " ) + Util::UTF8toUTF16( *it ) + std::u16string( u"\n" );
         }
         log.erase( log.end() - 1 );
         kakao_sendtext( __config.chatroom_name(), log );
