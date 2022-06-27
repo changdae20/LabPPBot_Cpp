@@ -304,7 +304,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
         tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
 
-        kakao_sendtext( chatroom_name, fmt::format( u"연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+        kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", name, tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
     } else if ( msg.rfind( u"/인벤 ", 0 ) == 0 || msg.rfind( u"/인벤토리 ", 0 ) == 0 ) { // 타인의 인벤
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
