@@ -37,7 +37,6 @@ int wmain( int argc, wchar_t *argv[] ) {
         std::regex re( "\n" );
         std::sregex_token_iterator token_it( logs_raw.begin(), logs_raw.end(), re, -1 ), end;
         std::vector<std::string> logs( token_it, end );
-        kakao_sendtext( __config.chatroom_name(), Util::UTF8toUTF16( logs_raw ) );
         std::u16string log = u"업데이트가 완료되었습니다.\n\n[업데이트 목록]\n";
         for ( auto it = logs.rbegin(); it != logs.rend(); ++it ) {
             log += Util::UTF8toUTF16( std::to_string( std::distance( logs.rbegin(), it ) + 1 ) ) + std::u16string( u". " ) + Util::UTF8toUTF16( *it ) + std::u16string( u"\n" );
