@@ -279,6 +279,17 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
+    if ( msg == u"/거북이" ) {
+        if ( std::ifstream( "src/zara_data.json" ).fail() ) { // 저장 파일 못찾은 경우
+            int zara_count = 0;
+        }
+        std::string json;
+        std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
+        turtle::ZaraData data;
+        google::protobuf::util::JsonStringToMessage( json, &data );
+
+        kakao_sendtext( chatroom_name, fmt::format( u"현재 거북이 이후 {}연속 자라입니다.", data.age() ) );
+    }
     if ( msg == u"/인벤" || msg == u"/인벤토리" ) { // 자신의 인벤
         http::Request request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
         auto response = request.send( "GET" );
