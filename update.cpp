@@ -48,7 +48,7 @@ int main() {
                 std::sregex_token_iterator it( new_log_raw.begin(), new_log_raw.end() - 1, re, -1 ), end;
                 std::vector<std::string> new_log( it, end );
                 new_log.erase( new_log.begin() + ( new_log.size() - old_log.size() ), new_log.end() );
-                std::string logs = std::accumulate( new_log.begin(), new_log.end(), std::string( "" ), []( auto &a, auto &b ) { return a + b + "\n"; } ); // join with newline
+                std::string logs = std::accumulate( new_log.begin(), new_log.end(), std::string( "" ), []( auto &a, auto &b ) { return a + b + "!@#"; } ); // join with !@#
                 status.assign( logs.begin(), logs.end() - 1 );
             }
         }

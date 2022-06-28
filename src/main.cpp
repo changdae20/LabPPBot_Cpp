@@ -34,7 +34,7 @@ int wmain( int argc, wchar_t *argv[] ) {
         std::wstring t( argv[ 1 ] );
 
         logs_raw.assign( t.begin(), t.end() );
-        std::regex re( "\n" );
+        std::regex re( "!@#" );
         std::sregex_token_iterator token_it( logs_raw.begin(), logs_raw.end(), re, -1 ), end;
         std::vector<std::string> logs( token_it, end );
         std::u16string log = u"업데이트가 완료되었습니다.\n\n[업데이트 목록]\n";
