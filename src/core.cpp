@@ -254,7 +254,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 if ( std::find( ages.begin(), ages.end(), 100 ) != ages.end() ) { // 정확하게 100살짜리를 먹은 경우
                     achievement_count( name, 28, 1 );
                 }
-                auto [ min, max ] = std::minmax( ages.begin(), ages.end() );
+                auto [ min, max ] = std::minmax_element( ages.begin(), ages.end() );
                 achievement_count( name, 7, *max );
                 achievement_count( name, 8, *min );
                 if ( ages.size() >= 2 ) { // 쌍거북 이상의 경우
