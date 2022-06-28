@@ -49,7 +49,7 @@ int main() {
                 std::vector<std::string> new_log( it, end );
                 new_log.erase( new_log.begin() + ( new_log.size() - old_log.size() ), new_log.end() );
                 std::string logs = std::accumulate( new_log.begin(), new_log.end(), std::string( "" ), []( auto &a, auto &b ) { return a + b + "!@#"; } ); // join with !@#
-                status.assign( logs.begin(), logs.end() - 1 );
+                status.assign( logs.begin(), logs.end() - 3 );
             }
         }
     }
