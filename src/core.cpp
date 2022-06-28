@@ -379,6 +379,39 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg.rfind( u"/채보 ", 0 ) == 0 ) {
+        auto args = Util::split( msg, " " );
+        http::Response response;
+        if ( args.size() == 2 && args[ 1 ] != u"" ) { // /채보 별명
+            http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) };
+            response = request.send( "GET" );
+        } else if ( args.size() == 3 && args[ 1 ] != u"" && args[ 2 ] != u"" ) { // /채보 별명 레벨
+            http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) + "&kind=" + Util::URLEncode( ( args[ 2 ] ) ) };
+            response = request.send( "GET" );
+        }
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+        if ( res_text == "{}" ) { // 검색 결과가 없는 경우
+            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            // TODO : 검색통해서 ~~~를 찾으시나요? 출력
+        } else {
+            std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
+            replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+            db::SdvxSong song;
+            google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
+
+            std::string lower_code;
+            std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
+            http::Request chart_request{ __config.storage_server() + "songs/" + lower_code + "/chart.png" };
+
+            const auto chart_response = chart_request.send( "GET" );
+            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( chart_response.body.data() ), static_cast<std::streamsize>( chart_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        }
+    }
+
     if ( msg == u"/업데이트" && name == u"손창대" ) {
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
