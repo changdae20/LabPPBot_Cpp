@@ -383,5 +383,57 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
     }
+
+    if ( msg.rfind( u"/링크 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/링크) ([\\s\\S]+)" ) );
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query = Util::UTF8toUTF16( *it );
+
+        http::Request request{ __config.api_endpoint() + "streaming?kind=" + Util::URLEncode( query ) };
+        auto response = request.send( "GET" );
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+
+        if ( res_text == "Error" ) { // 해당하는 링크를 찾지 못한 경우
+            kakao_sendtext( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" );
+        } else { // 해당 링크를 찾은 경우
+            kakao_sendtext( chatroom_name, Util::UTF8toUTF16( res_text ) );
+        }
+    }
+
+    if ( msg.rfind( u"/대기 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/대기) ([\\s\\S]+)" ) );
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query = Util::UTF8toUTF16( *it );
+
+        http::Request request{ __config.api_endpoint() + "streaming?kind=" + Util::URLEncode( query ) };
+        auto response = request.send( "GET" );
+        std::string res_text = std::string( response.body.begin(), response.body.end() );
+
+        if ( res_text == "Error" ) { // 해당하는 링크를 찾지 못한 경우
+            kakao_sendtext( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" );
+        } else { // 해당 링크를 찾은 경우
+            request = http::Request( __config.api_endpoint() + "streaming/playback?url=" + Util::URLEncode( res_text ) );
+            response = request.send( "GET" );
+            res_text = std::string( response.body.begin(), response.body.end() );
+
+            if ( res_text == "Error" ) {
+                kakao_sendtext( chatroom_name, u"라이브 스트리밍을 찾았지만, 플레이백 URL을 구하는 과정에서 에러가 발생했습니다." );
+            } else {
+                auto capture = cv::VideoCapture( res_text );
+                cv::Mat frame;
+                auto grabbed = capture.read( frame );
+                if ( grabbed ) { // 캡쳐에 성공한 경우
+                    auto bmp = Util::ConvertCVMatToBMP( frame );
+                    if ( Util::PasteBMPToClipboard( bmp ) ) {
+                        kakao_sendimage( chatroom_name );
+                    }
+                } else { // playback은 있었지만 캡쳐에 실패한 경우
+                    kakao_sendtext( chatroom_name, u"라이브 스트리밍을 찾았지만, 오류가 발생하여 썸네일을 생성하지 못했습니다." );
+                }
+            }
+        }
+    }
     return RETURN_CODE::OK;
 }
