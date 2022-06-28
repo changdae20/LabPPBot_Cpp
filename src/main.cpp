@@ -48,8 +48,8 @@ int wmain( int argc, wchar_t *argv[] ) {
         auto ret = loop( __config.chatroom_name(), last_chat, last_idx );
         last_chat = ret.first;
         last_idx = ret.second;
-        if ( last_chat == u"Update" && last_idx ) {
-            return 1;
+        if ( last_chat == u"Update" && last_idx == -12345 ) {
+            return -12345;
         }
         Sleep( 20 );
     }

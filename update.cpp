@@ -29,8 +29,9 @@ int main() {
     while ( true ) {
         int status_code = _wsystem( std::wstring( L".\\bin\\Release\\main.exe \"" + status + L"\"" ).c_str() );
         if ( status_code == 0 ) { // 일반적인 종료
+            status = L"initial";
             continue;
-        } else if ( status_code == 1 ) { // 업데이트 요청
+        } else if ( status_code == -12345 ) { // 업데이트 요청
             auto old_log_raw = exec( "git log --format=%s" );
             std::regex re( "\n" );
             std::sregex_token_iterator it( old_log_raw.begin(), old_log_raw.end() - 1, re, -1 ), end;

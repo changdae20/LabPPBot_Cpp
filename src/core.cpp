@@ -196,7 +196,7 @@ std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std
                 tokens.push_back( Util::UTF8toUTF16( *it ) );
             auto ret = execute_command( chatroom_name, tokens[ 0 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ] );
             if ( ret == RETURN_CODE::UPDATE )
-                return std::pair( u"Update", -1 );
+                return std::pair( u"Update", -12345 );
         }
         return std::pair( splitted.at( splitted.size() - 1 ), last_idx + splitted.size() );
     }
