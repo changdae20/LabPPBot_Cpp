@@ -526,6 +526,56 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg == u"/갱신" ) { // 자신을 갱신
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
+        std::regex reg( "//" );
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+        http::Request renewal_request{ fmt::format( "{}renewal?svid={}&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_svid ), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        auto renewal_response = renewal_request.send( "GET" );
+        res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
+        if ( res_text == "-1" ) {
+            kakao_sendtext( chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." );
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) );
+        }
+    } else if ( msg.rfind( u"/갱신 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/갱신) ([\\S]+)" ) );
+        if ( !std::regex_match( u8msg, reg ) ) {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /갱신 [이름]" );
+            return RETURN_CODE::OK;
+        }
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
+        reg = std::regex( "//" );
+        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+        http::Request renewal_request{ fmt::format( "{}renewal?svid={}&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_svid ), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        auto renewal_response = renewal_request.send( "GET" );
+        res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
+        if ( res_text == "-1" ) {
+            kakao_sendtext( chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." );
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) );
+        }
+    }
+
     if ( msg == u"/업데이트" && name == u"손창대" ) {
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
