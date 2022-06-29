@@ -294,7 +294,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         http::Request request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
         auto response = request.send( "GET" );
         auto res_text = std::string( response.body.begin(), response.body.end() );
-        std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":(-[0-9]+),\"29\":([0-9]+)\\}" );
+        std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
         std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
         std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
         std::vector<std::u16string> tokens;
@@ -322,7 +322,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 request = http::Request( fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( query_name ) ) );
                 response = request.send( "GET" );
                 res_text = std::string( response.body.begin(), response.body.end() );
-                std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":(-[0-9]+),\"29\":([0-9]+)\\}" );
+                std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
                 std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
                 std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
                 std::vector<std::u16string> tokens;
