@@ -576,6 +576,64 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg == u"/인포" ) { // 자신의 인포 조회
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        std::regex reg( "//" );
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+        http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        auto info_response = info_request.send( "GET" );
+        res_text = std::string( info_response.body.begin(), info_response.body.end() );
+        auto info_token = Util::split( Util::UTF8toUTF16( res_text ), "//" );
+
+        if ( info_token.size() == 6 ) {
+            kakao_sendtext( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) );
+        } else {
+            kakao_sendtext( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." );
+        }
+    } else if ( msg.rfind( u"/인포 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/인포) ([\\S]+)" ) );
+        if ( !std::regex_match( u8msg, reg ) ) {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /인포 [이름]" );
+            return RETURN_CODE::OK;
+        }
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        reg = std::regex( "//" );
+        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+
+        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+            auto info_response = info_request.send( "GET" );
+            res_text = std::string( info_response.body.begin(), info_response.body.end() );
+            auto info_token = Util::split( Util::UTF8toUTF16( res_text ), "//" );
+
+            if ( info_token.size() == 6 ) {
+                kakao_sendtext( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", query_name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) );
+            } else {
+                kakao_sendtext( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 인포 조회 권한이 없습니다." );
+        }
+    }
+
     if ( msg == u"/업데이트" && name == u"손창대" ) {
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
