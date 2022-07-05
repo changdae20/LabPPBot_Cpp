@@ -773,5 +773,14 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         kakao_sendtext( chatroom_name, Util::UTF8toUTF16( res_text ) );
     }
 
+    if ( msg == u"/국내야구랭킹" || msg == u"/국야랭" ) {
+        http::Request request{ fmt::format( "{}etc/baseball_ranking", __config.api_endpoint() ) };
+        auto response = request.send( "GET" );
+        auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
+        auto bmp = Util::ConvertCVMatToBMP( frame );
+        if ( Util::PasteBMPToClipboard( bmp ) ) {
+            kakao_sendimage( chatroom_name );
+        }
+    }
     return RETURN_CODE::OK;
 }
