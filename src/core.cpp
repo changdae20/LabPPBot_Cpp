@@ -197,6 +197,9 @@ std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std
             auto ret = execute_command( chatroom_name, tokens[ 0 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ] );
             if ( ret == RETURN_CODE::UPDATE )
                 return std::pair( u"Update", -12345 );
+            else if ( ret == RETURN_CODE::ERR ) {
+                return std::pair( u"Error", -24680 );
+            }
         }
         return std::pair( splitted.at( splitted.size() - 1 ), last_idx + splitted.size() );
     }
@@ -205,6 +208,10 @@ std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std
 RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16string &name, const std::u16string &AMPM, const std::u16string &time, const std::u16string &msg ) {
     if ( name == u"EndTime" ) {
         return RETURN_CODE::OK;
+    }
+
+    if ( Util::time_distance( AMPM, time ) >= 3 ) {
+        return RETURN_CODE::ERR;
     }
 
     if ( msg == u"/자라" ) {
