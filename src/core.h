@@ -19,7 +19,7 @@ enum class RETURN_CODE {
     UPDATE,
     CLEAR,
     OK,
-    ERROR
+    ERR
 };
 
 void SendReturn( HWND hwnd );
