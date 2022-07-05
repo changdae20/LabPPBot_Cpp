@@ -761,6 +761,50 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg.rfind( u"/통계 ", 0 ) == 0 ) {
+        std::u16string query_name, level;
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg1( Util::UTF16toUTF8( u"(/통계) ([\\S]+) ([1-9]|1\\d|20)$" ) );
+        std::regex reg2( Util::UTF16toUTF8( u"(/통계) ([1-9]|1\\d|20)$" ) );
+
+        if ( std::regex_match( u8msg, reg1 ) ) {
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg1, std::vector<int>{ 2, 3 } );
+            query_name = Util::UTF8toUTF16( *it );
+            level = Util::UTF8toUTF16( *( std::next( it ) ) );
+        } else if ( std::regex_match( u8msg, reg2 ) ) {
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg2, std::vector<int>{ 2 } );
+            query_name = name;
+            level = Util::UTF8toUTF16( *it );
+            std::cout << "LEVEL : " << ( *it ) << std::endl;
+        } else {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /통계 {이름} [레벨]" );
+            return RETURN_CODE::OK;
+        }
+
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        std::regex reg( "//" );
+        auto it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+
+        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/statistics?id={}&pw={}&level={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ), Util::URLEncode( level ) ) };
+            auto response = request.send( "GET" );
+            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 통계 조회 권한이 없습니다." );
+        }
+    }
+
     if ( msg == u"/업데이트" && name == u"손창대" ) {
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
