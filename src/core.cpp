@@ -697,5 +697,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             }
         }
     }
+
+    if ( msg == u"/국내야구" ) {
+        http::Request request{ __config.api_endpoint() + "etc/baseball" };
+        auto response = request.send( "GET" );
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+        kakao_sendtext( chatroom_name, Util::UTF8toUTF16( res_text ) );
+    }
+
     return RETURN_CODE::OK;
 }
