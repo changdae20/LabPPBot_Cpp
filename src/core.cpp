@@ -377,11 +377,19 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
             http::Request jacket_request{ __config.storage_server() + "songs/" + lower_code + "/jacket.png" };
 
-            const auto jacket_response = jacket_request.send( "GET" );
-            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
+            try {
+                const auto jacket_response = jacket_request.send( "GET", "", {}, std::chrono::seconds( 10 ) );
+                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto bmp = Util::ConvertCVMatToBMP( frame );
+                if ( Util::PasteBMPToClipboard( bmp ) ) {
+                    kakao_sendimage( chatroom_name );
+                }
+            } catch ( const http::ResponseError &e ) {
+                if ( std::strcmp( e.what(), "Request timed out" ) == 0 ) { // Request Timeout Error
+                    kakao_sendtext( chatroom_name, u"스토리지 서버에서 자켓파일을 가져오는데 실패했습니다." );
+                } else {
+                    kakao_sendtext( chatroom_name, std::u16string( u"스토리지 서버에서 예상치 못한 에러가 발생했습니다." ) + Util::UTF8toUTF16( std::string( e.what() ) ) );
+                }
             }
         }
     }
@@ -410,11 +418,19 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
             http::Request chart_request{ __config.storage_server() + "songs/" + lower_code + "/chart.png" };
 
-            const auto chart_response = chart_request.send( "GET" );
-            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( chart_response.body.data() ), static_cast<std::streamsize>( chart_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
+            try {
+                const auto chart_response = chart_request.send( "GET" );
+                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( chart_response.body.data() ), static_cast<std::streamsize>( chart_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto bmp = Util::ConvertCVMatToBMP( frame );
+                if ( Util::PasteBMPToClipboard( bmp ) ) {
+                    kakao_sendimage( chatroom_name );
+                }
+            } catch ( const http::ResponseError &e ) {
+                if ( std::strcmp( e.what(), "Request timed out" ) == 0 ) { // Request Timeout Error
+                    kakao_sendtext( chatroom_name, u"스토리지 서버에서 채보파일을 가져오는데 실패했습니다." );
+                } else {
+                    kakao_sendtext( chatroom_name, std::u16string( u"스토리지 서버에서 예상치 못한 에러가 발생했습니다." ) + Util::UTF8toUTF16( std::string( e.what() ) ) );
+                }
             }
         }
     }
