@@ -419,7 +419,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             http::Request chart_request{ __config.storage_server() + "songs/" + lower_code + "/chart.png" };
 
             try {
-                const auto chart_response = chart_request.send( "GET" );
+                const auto chart_response = chart_request.send( "GET", "", {}, std::chrono::seconds( 10 ) );
                 auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( chart_response.body.data() ), static_cast<std::streamsize>( chart_response.body.size() ) ), cv::IMREAD_UNCHANGED );
                 auto bmp = Util::ConvertCVMatToBMP( frame );
                 if ( Util::PasteBMPToClipboard( bmp ) ) {
