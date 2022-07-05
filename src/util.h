@@ -1,6 +1,9 @@
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <ctime>
+#include <iomanip>
+#include <iostream>
 #include <random>
 #include <regex>
 #include <string>
@@ -23,6 +26,7 @@ template <template <typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
 namespace Util {
+int time_distance( std::u16string AMPM, std::u16string time );
 template <typename T, typename UnaryOperation>
 std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::string a, UnaryOperation unary_op );
 int rand( int start, int end );

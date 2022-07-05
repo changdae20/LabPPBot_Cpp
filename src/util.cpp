@@ -1,6 +1,23 @@
-#include "util.h"
+﻿#include "util.h"
 
 namespace Util {
+int time_distance( std::u16string AMPM, std::u16string stime ) {
+    std::time_t t = time( NULL );
+    struct tm *tm = localtime( &t );
+    std::array<char, 10> buffer;
+    int len = strftime( &buffer[ 0 ], buffer.size(), "%H", tm );
+    int hour = std::stoi( std::string( buffer.begin(), buffer.begin() + len ) );
+
+    len = strftime( &buffer[ 0 ], buffer.size(), "%M", tm );
+    int min = std::stoi( std::string( buffer.begin(), buffer.begin() + len ) );
+
+    auto input = split( stime, ":" );
+    int input_hour = std::stoi( UTF16toUTF8( input[ 0 ] ) ) + ( AMPM == u"오전" ? 0 : 12 ) + ( input[ 0 ] == u"12" ? -12 : 0 );
+    int input_min = std::stoi( UTF16toUTF8( input[ 1 ] ) );
+
+    return std::abs( hour * 60 + min - input_hour * 60 - input_min );
+}
+
 template <typename T, typename UnaryOperation>
 std::enable_if_t<is_specialization<T, std::vector>::value, T> parse( std::string a, UnaryOperation unary_op ) {
     T ans;
