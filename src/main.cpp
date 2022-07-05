@@ -50,7 +50,7 @@ int wmain( int argc, wchar_t *argv[] ) {
         last_idx = ret.second;
         if ( last_chat == u"Update" && last_idx == -12345 ) {
             return -12345;
-        } else if ( last_chat == u"Error" && last_idx == -24680){
+        } else if ( last_chat == u"Error" && last_idx == -24680 ) {
             auto reload = save_last_chat( __config.chatroom_name() );
             last_chat = reload.first;
             last_idx = reload.second;
