@@ -24,3 +24,12 @@ message SdvxSong {
 message SdvxList{
     repeated SdvxSong sdvxsongs = 1;
 }
+
+message Coord {
+    int32 x = 1;
+    int32 y = 2;
+}
+
+message TableList {
+    map<string, Coord> dict = 1;
+}
