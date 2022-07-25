@@ -1010,5 +1010,12 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendimage( chatroom_name );
         }
     }
+
+    if ( msg.rfind( u"/", 0 ) == 0 && msg.find( u"vs" ) != std::u16string::npos ) {
+        auto tokens = Util::split( msg.substr( 1 ), "vs" );
+        auto selected = tokens.at( Util::rand( 0, tokens.size() - 1 ) );
+        std::regex reg( "\\s" );
+        kakao_sendtext( chatroom_name, Util::UTF8toUTF16( std::regex_replace( Util::UTF16toUTF8( selected ), reg, "" ) ) );
+    }
     return RETURN_CODE::OK;
 }
