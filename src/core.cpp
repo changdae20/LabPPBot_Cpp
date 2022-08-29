@@ -391,8 +391,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                     if ( Util::PasteBMPToClipboard( bmp ) ) {
                         kakao_sendimage( chatroom_name );
                     }
-                }catch{
-                    kakao_sendtext( chatroom_name, u"자켓을 찾을 수 없습니다." );
+                } catch ( cv::Exception &e ) {
+                    kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
                 }
             }
         }
@@ -436,8 +436,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                     if ( Util::PasteBMPToClipboard( bmp ) ) {
                         kakao_sendimage( chatroom_name );
                     }
-                }catch{
-                    kakao_sendtext( chatroom_name, u"자켓을 찾을 수 없습니다." );
+                } catch ( cv::Exception &e ) {
+                    kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
                 }
             }
         }
