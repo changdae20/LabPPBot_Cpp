@@ -1025,5 +1025,30 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::regex reg( "\\s" );
         kakao_sendtext( chatroom_name, Util::UTF8toUTF16( std::regex_replace( Util::UTF16toUTF8( selected ), reg, "" ) ) );
     }
+
+    if ( msg.rfind( u"/장비 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string nick, kind; // 쿼리용 변수
+        http::Response image_response;
+        if ( std::regex_match( u8msg, std::regex( u8"(/장비) ([\\S]+) (반지1|모자|뚝|뚝배기|엠블렘|엠블럼|엠블|반지2|펜던트2|펜던2|얼굴장식|얼장|뱃지|반지3|펜던트1|펜던트|펜던|눈장식|눈장|귀고리|귀걸이|이어링|훈장|메달|반지4|무기|상의|견장|어깨장식|보조|보조무기|포켓|포켓아이템|벨트|하의|장갑|망토|신발|하트|기계심장)" ) ) ) { // /장비 닉네임 부위
+            std::regex reg( u8"(/장비) ([\\S]+) (반지1|모자|뚝|뚝배기|엠블렘|엠블럼|엠블|반지2|펜던트2|펜던2|얼굴장식|얼장|뱃지|반지3|펜던트1|펜던트|펜던|눈장식|눈장|귀고리|귀걸이|이어링|훈장|메달|반지4|무기|상의|견장|어깨장식|보조|보조무기|포켓|포켓아이템|벨트|하의|장갑|망토|신발|하트|기계심장)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            nick = Util::UTF8toUTF16( *( it++ ) );
+            kind = Util::UTF8toUTF16( *it );
+            http::Request title_request{ __config.api_endpoint() + "maple?nick=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( kind ) };
+            image_response = title_request.send( "GET" );
+            if ( std::string( image_response.body.begin(), image_response.body.end() ) == "ERROR" ) {
+                kakao_sendtext( chatroom_name, u"장비를 조회하는 도중에 에러가 발생했습니다. 장비정보가 공개되어있는지 메이플스토리 공식홈페이지에서 한번 더 확인해주세요." );
+            } else {
+                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( image_response.body.data() ), static_cast<std::streamsize>( image_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto bmp = Util::ConvertCVMatToBMP( frame );
+                if ( Util::PasteBMPToClipboard( bmp ) ) {
+                    kakao_sendimage( chatroom_name );
+                }
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /장비 [닉네임] [부위]\n조회 가능한 장비분류 : 반지1, 모자, 뚝, 뚝배기, 엠블렘, 엠블럼, 엠블, 반지2, 펜던트2, 펜던2, 얼굴장식, 얼장, 뱃지, 반지3, 펜던트1, 펜던트, 펜던, 눈장식, 눈장, 귀고리, 귀걸이, 이어링, 훈장, 메달, 반지4, 무기, 상의, 견장, 어깨장식, 보조, 보조무기, 포켓, 포켓아이템, 벨트, 하의, 장갑, 망토, 신발, 하트, 기계심장" );
+        }
+    }
     return RETURN_CODE::OK;
 }
