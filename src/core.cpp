@@ -46,9 +46,9 @@ void kakao_sendimage( const std::string &chatroom_name ) {
         auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
         SetForegroundWindow( child_wnd );
         PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        Sleep( 100 );
+        Sleep( 200 );
         SendReturn( GetForegroundWindow() );
-        Sleep( 50 );
+        Sleep( 100 );
     }
 }
 
