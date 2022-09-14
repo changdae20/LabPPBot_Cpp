@@ -79,13 +79,13 @@ void PostKeyEx( HWND &hwnd, UINT key, WPARAM shift, bool specialkey ) {
         } else {
             pKeyBuffers[ shift ] |= 128;
             SetKeyboardState( pKeyBuffers );
-            Sleep( 25 );
+            Sleep( 50 );
             PostMessage( hwnd, WM_KEYDOWN, key, lparam );
-            Sleep( 25 );
+            Sleep( 50 );
             PostMessage( hwnd, WM_KEYUP, key, lparam | 0xC0000000 );
-            Sleep( 25 );
+            Sleep( 50 );
             SetKeyboardState( pKeyBuffers_old );
-            Sleep( 25 );
+            Sleep( 50 );
             AttachThreadInput( GetCurrentThreadId(), ThreadId, false );
         }
     } else {
