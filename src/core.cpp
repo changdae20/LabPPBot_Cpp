@@ -1050,5 +1050,44 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /장비 [닉네임] [부위]\n조회 가능한 장비분류 : 반지1, 모자, 뚝, 뚝배기, 엠블렘, 엠블럼, 엠블, 반지2, 펜던트2, 펜던2, 얼굴장식, 얼장, 뱃지, 반지3, 펜던트1, 펜던트, 펜던, 눈장식, 눈장, 귀고리, 귀걸이, 이어링, 훈장, 메달, 반지4, 무기, 상의, 견장, 어깨장식, 보조, 보조무기, 포켓, 포켓아이템, 벨트, 하의, 장갑, 망토, 신발, 하트, 기계심장" );
         }
     }
+
+    if ( msg.rfind( u"/검색 ", 0 ) == 0 ) {
+        auto search_text = msg.substr( 4 );
+
+        if ( search_text.length() == 0 ) {
+            kakao_sendtext( chatroom_name, u"검색어를 입력해주세요" );
+            return RETURN_CODE::OK;
+        }
+
+        auto regex = std::regex( "^\\S$|^\\S.*\\S$" );
+        auto u8str = Util::UTF16toUTF8( search_text );
+        if ( !std::regex_match( u8str, regex ) ) {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /검색 [검색어]" );
+            return RETURN_CODE::OK;
+        }
+        http::Request request{ __config.api_endpoint() + "songs/search?search_text=" + Util::URLEncode( search_text ) };
+        auto response = request.send( "GET" );
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+        std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
+        replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+
+        // protobuf로 만들기 위해 message formatting
+        replaced = fmt::format( "{{\"result\":{}}}", replaced );
+
+        db::SearchResult result;
+        google::protobuf::util::JsonStringToMessage( replaced, &result );
+
+        if ( result.result_size() == 0 ) {
+            kakao_sendtext( chatroom_name, fmt::format( u"검색어 \"{}\"에 대한 결과를 찾을 수 없습니다.", search_text ) );
+        } else {
+            std::u16string ret = fmt::format( u"\"{}\"에 대한 검색 결과입니다.", search_text );
+
+            for ( size_t i = 0; i < result.result_size(); ++i ) {
+                ret += fmt::format( u"\n{}. {} [Lv{}, 별명 : {}]", i + 1, Util::UTF8toUTF16( result.result( i ).song().title() ), result.result( i ).song().level(), result.result( i ).song().nick1() == "" ? u"없음" : Util::UTF8toUTF16( result.result( i ).song().nick1() ) );
+            }
+
+            kakao_sendtext( chatroom_name, ret );
+        }
+    }
     return RETURN_CODE::OK;
 }
