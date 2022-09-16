@@ -33,3 +33,12 @@ message Coord {
 message TableList {
     map<string, Coord> dict = 1;
 }
+
+message SingleSearch {
+    SdvxSong song = 1;
+    int32 lcs = 2;
+}
+
+message SearchResult {
+    repeated SingleSearch result = 1;
+}
