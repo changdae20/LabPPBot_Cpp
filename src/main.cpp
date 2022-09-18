@@ -3,15 +3,17 @@
 
 #include <fstream>
 #include <google/protobuf/util/json_util.h>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include "HTTPRequest.hpp"
+#include "checked.h"
 #include "core.h"
 #include "protobuf/config.pb.h"
-#include "util.h"
-
-#include "checked.h"
+#include "scheduler.h"
 #include "utf8_core.h"
+#include "util.h"
 
 enum class STATUS { // Loop가 끝났을 때 반환하는 Status Code
     GOOD,
@@ -20,6 +22,10 @@ enum class STATUS { // Loop가 끝났을 때 반환하는 Status Code
 };
 
 config::Config __config;
+
+// multi-threading으로 구현한 scheduler
+std::mutex m;
+std::vector<std::u16string> scheduler_message;
 
 int wmain( int argc, wchar_t *argv[] ) {
     std::string json;
@@ -44,10 +50,27 @@ int wmain( int argc, wchar_t *argv[] ) {
         log.erase( log.end() - 1 );
         kakao_sendtext( __config.chatroom_name(), log );
     }
+
+    std::thread scheduler( scheduler_boj, std::ref( scheduler_message ), std::ref( m ), std::chrono::minutes( 1 ) ); // 백준 스케쥴러 등록
+
     while ( true ) {
         auto ret = loop( __config.chatroom_name(), last_chat, last_idx );
         last_chat = ret.first;
         last_idx = ret.second;
+
+        // 스케줄러 메세지 있으면 전송
+        {
+            m.lock();
+            if ( !scheduler_message.empty() ) {
+                for ( auto &msg : scheduler_message ) {
+                    kakao_sendtext( __config.chatroom_name(), msg );
+                    Sleep( 500 );
+                }
+                scheduler_message.clear();
+            }
+            m.unlock();
+        }
+
         if ( last_chat == u"Update" && last_idx == -12345 ) {
             return -12345;
         } else if ( last_chat == u"Error" && last_idx == -24680 ) {

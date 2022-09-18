@@ -3,6 +3,8 @@ SET(LabPPBot_Cpp_SRC
     util.cpp
     core.h
     core.cpp
+    scheduler.h
+    scheduler.cpp
     HTTPRequest.hpp
     utf8_core.h
     checked.h
