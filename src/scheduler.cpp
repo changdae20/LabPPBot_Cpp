@@ -45,6 +45,11 @@ void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &
                     std::u16string title = title_level[ 0 ];
                     std::u16string level = title_level[ 1 ];
 
+                    // 해결한 문제가 실버 난이도 이상일 때만 메세지 전송
+                    if ( level.rfind( u"Unranked", 0 ) == 0 || level.rfind( u"Bronze", 0 ) == 0 ) {
+                        continue;
+                    }
+
                     // 해결한 사람의 레이팅과 티어를 ,로 구분하여 가져옴
                     http::Request request3( fmt::format( "{}boj/info?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) );
                     auto response3 = request3.send( "GET" );
@@ -63,10 +68,8 @@ void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &
 
                     if ( tier.rfind( u"Unranked", 0 ) == 0 ) {
                         tier_emoji = u"📌";
-                        continue;
                     } else if ( tier.rfind( u"Bronze", 0 ) == 0 ) {
                         tier_emoji = u"🥉";
-                        continue;
                     } else if ( tier.rfind( u"Silver", 0 ) == 0 ) {
                         tier_emoji = u"💿";
                     } else if ( tier.rfind( u"Gold", 0 ) == 0 ) {
