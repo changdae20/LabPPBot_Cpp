@@ -63,8 +63,10 @@ void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &
 
                     if ( tier.rfind( u"Unranked", 0 ) == 0 ) {
                         tier_emoji = u"📌";
+                        continue;
                     } else if ( tier.rfind( u"Bronze", 0 ) == 0 ) {
                         tier_emoji = u"🥉";
+                        continue;
                     } else if ( tier.rfind( u"Silver", 0 ) == 0 ) {
                         tier_emoji = u"💿";
                     } else if ( tier.rfind( u"Gold", 0 ) == 0 ) {
