@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package popndb;
+
+message PopnSong {
+    int32 id = 1;
+    string title = 2;
+    string genre = 3;
+
+    string diff = 4;
+    int32 level = 5;
+
+    string nick1 = 6;
+    string nick2 = 7;
+    string nick3 = 8;
+
+    string bpm = 9;
+    string duration = 10;
+    int32 notes = 11;
+}
+
+message PopnList{
+    repeated PopnSong popnsongs = 1;
+}
+
+message SingleSearch {
+    PopnSong song = 1;
+    int32 lcs = 2;
+}
+
+message SearchResult {
+    repeated SingleSearch result = 1;
+}
