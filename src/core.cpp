@@ -1271,5 +1271,24 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg.rfind( u">서든 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        int bpm1, bpm2;
+        if ( std::regex_match( u8msg, std::regex( u8"(>서든) ([0-9]+) ([0-9]+)" ) ) ) {
+            std::regex reg( u8"(>서든) ([0-9]+) ([0-9]+)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            bpm1 = std::stoi( *( it++ ) );
+            bpm2 = std::stoi( *it );
+
+            if ( std::min<>( bpm1, bpm2 ) <= 0 || std::max<>( bpm1, bpm2 ) >= 1000 ) {
+                kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속>0] [고속<1000]" );
+            } else {
+                int sudden = 95 - ( 315.0f * std::min<>( bpm1, bpm2 ) / std::max<>( bpm1, bpm2 ) );
+                kakao_sendtext( chatroom_name, fmt::format( u"서든 : {}", sudden ) );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속] [고속]" );
+        }
+    }
     return RETURN_CODE::OK;
 }
