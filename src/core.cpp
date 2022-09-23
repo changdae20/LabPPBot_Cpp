@@ -1290,5 +1290,17 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속] [고속]" );
         }
     }
+
+    if ( msg == u"/오늘의백준" || msg == u"/데일리백준" ) {
+        http::Request request{ fmt::format( "{}boj/daily", __config.api_endpoint() ) };
+        auto response = request.send( "GET" );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
+        auto splitted = Util::split( Util::UTF8toUTF16( res_text ), "!@#" );
+        if ( splitted.size() != 3 ) {
+            kakao_sendtext( chatroom_name, u"오류가 발생했습니다." );
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"📖오늘의 문제📖\n제목 : {}\n레벨 : {}\n\nhttps://www.acmicpc.net/problem/{}", splitted[ 1 ], splitted[ 2 ], splitted[ 0 ] ) );
+        }
+    }
     return RETURN_CODE::OK;
 }
