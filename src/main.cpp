@@ -51,7 +51,7 @@ int wmain( int argc, wchar_t *argv[] ) {
         kakao_sendtext( __config.chatroom_name(), log );
     }
 
-    std::thread scheduler( scheduler_boj, std::ref( scheduler_message ), std::ref( m ), std::chrono::minutes( 1 ) ); // 백준 스케쥴러 등록
+    std::thread scheduler( scheduler_boj, std::ref( scheduler_message ), std::ref( m ), std::chrono::minutes( 5 ) ); // 백준 스케쥴러 등록
 
     while ( true ) {
         auto ret = loop( __config.chatroom_name(), last_chat, last_idx );
