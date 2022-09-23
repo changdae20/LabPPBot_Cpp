@@ -1089,5 +1089,187 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendtext( chatroom_name, ret );
         }
     }
+
+    // 팝픈뮤직 점수조회
+    if ( msg.rfind( u">점수조회 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string query_name, title, level, nick; // 쿼리용 변수
+        http::Response title_response;
+        std::u16string score, grade, medal;                                                                                    // 결과
+        if ( std::regex_match( u8msg, std::regex( u8"(>점수조회) ([\\S]+) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" ) ) ) { // >점수조회 사람 곡명 레벨
+            std::regex reg( u8"(>점수조회) ([\\S]+) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3, 4 } ), end;
+            query_name = Util::UTF8toUTF16( *( it++ ) );
+            auto nick = Util::UTF8toUTF16( *( it++ ) );
+            level = Util::UTF8toUTF16( *it );
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( level ) };
+            title_response = title_request.send( "GET" );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>점수조회) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" ) ) ) { // >점수조회 곡명 레벨
+            std::regex reg( u8"(>점수조회) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            query_name = name;
+            auto nick = Util::UTF8toUTF16( *( it++ ) );
+            level = Util::UTF8toUTF16( *it );
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( level ) };
+            title_response = title_request.send( "GET" );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>점수조회) ([\\S]+) ([\\s\\S]+)" ) ) ) { // >점수조회 사람 곡명
+            std::regex reg( u8"(>점수조회) ([\\S]+) ([\\s\\S]+)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            query_name = Util::UTF8toUTF16( *( it++ ) );
+            auto nick = Util::UTF8toUTF16( *it );
+            level = u"";
+
+            // 혹시 (>점수조회 곡명)인지 확인하기 위해 query_name이 진짜 DB에 있는지 확인
+            http::Request request{ __config.api_endpoint() + "member?chatroom_name=" + Util::URLEncode( chatroom_name ) };
+            auto response = request.send( "GET" );
+            std::string res_text = std::string( response.body.begin(), response.body.end() );
+            if ( res_text == "[]" ) { // DB에 해당 단체방에 대한 정보가 없음
+                kakao_sendtext( chatroom_name, u"지원하지 않는 단체방입니다." );
+            } else {
+                auto splitted = Util::split( Util::UTF8toUTF16( std::string( res_text.begin() + 1, res_text.end() - 1 ) ), "," );
+                if ( std::find( splitted.begin(), splitted.end(), fmt::format( u"\"{}\"", query_name ) ) != splitted.end() ) { // 멤버를 찾음
+                    http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+                    title_response = title_request.send( "GET" );
+                } else { // 멤버 없는 경우 >점수조회 곡명 명령어를 띄어쓰기 포함하여 사용한 경우.
+                    query_name = name;
+                    reg = std::regex( u8"(>점수조회) ([\\s\\S]+)" );
+                    std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+                    auto nick = Util::UTF8toUTF16( *( it ) );
+                    http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+                    title_response = title_request.send( "GET" );
+                }
+            }
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>점수조회) ([\\s\\S]+)" ) ) ) { // >점수조회 곡명
+            std::regex reg( u8"(>점수조회) ([\\s\\S]+)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } ), end;
+            query_name = name;
+            auto nick = Util::UTF8toUTF16( *( it ) );
+            level = u"";
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+            title_response = title_request.send( "GET" );
+        }
+
+        std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
+
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            return RETURN_CODE::OK;
+            // TODO : 검색으로 ~를 찾으시나요? 출력
+        }
+        popndb::PopnSong song;
+        google::protobuf::util::JsonStringToMessage( res_text.c_str(), &song );
+        if ( level == u"" ) {
+            level = Util::UTF8toUTF16( std::to_string( song.level() ) );
+        }
+
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        std::regex reg( "//" );
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+
+        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}popn_songs/score?name={}&song_id={}", __config.api_endpoint(), Util::URLEncode( query_name ), song.id() ) };
+            auto response = request.send( "GET" );
+            res_text = std::string( response.body.begin(), response.body.end() );
+            std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+            score = Util::UTF8toUTF16( *( it++ ) );
+            grade = Util::UTF8toUTF16( *( it++ ) );
+            medal = Util::UTF8toUTF16( *it );
+
+            if ( score == u"-1" && grade == u"NP" && medal == u"NP" ) { // Not Played
+                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : ❌NP❌", query_name ) );
+                return RETURN_CODE::OK;
+            } else {
+                if ( grade == u"s" ) {
+                    grade = u"S";
+                } else if ( grade == u"a3" ) {
+                    grade = u"AAA";
+                } else if ( grade == u"a2" ) {
+                    grade = u"AA";
+                } else if ( grade == u"a1" ) {
+                    grade = u"A";
+                } else if ( grade == u"b" ) {
+                    grade = u"B";
+                } else if ( grade == u"c" ) {
+                    grade = u"C";
+                } else if ( grade == u"d" ) {
+                    grade = u"D";
+                } else if ( grade == u"e" ) {
+                    grade = u"E";
+                }
+
+                if ( medal == u"a" ) {
+                    medal = u"⭐";
+                } else if ( medal == u"b" ) {
+                    medal = u"🤍";
+                } else if ( medal == u"c" ) {
+                    medal = u"⬜";
+                } else if ( medal == u"d" ) {
+                    medal = u"⚪";
+                } else if ( medal == u"e" ) {
+                    medal = u"🤎";
+                } else if ( medal == u"f" ) {
+                    medal = u"🟫";
+                } else if ( medal == u"g" ) {
+                    medal = u"🟤";
+                } else if ( medal == u"h" ) {
+                    medal = u"★";
+                } else if ( medal == u"i" ) {
+                    medal = u"◆";
+                } else if ( medal == u"j" ) {
+                    medal = u"●";
+                } else if ( medal == u"k" ) {
+                    medal = u"🌱";
+                }
+                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : {}{}", query_name, score, medal ) );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) );
+        }
+    }
+
+    // 팝픈뮤직 갱신
+    if ( msg == u">갱신" ) { // 자신을 갱신
+        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
+        http::Request renewal_request{ fmt::format( "{}popn_songs/renewal?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
+        auto renewal_response = renewal_request.send( "GET" );
+        auto res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
+        if ( res_text == "-2" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        } else if ( res_text == "-1" ) {
+            kakao_sendtext( chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." );
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) );
+        }
+    } else if ( msg.rfind( u">갱신 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(>갱신) ([\\S]+)" ) );
+        if ( !std::regex_match( u8msg, reg ) ) {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >갱신 [이름]" );
+            return RETURN_CODE::OK;
+        }
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+
+        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
+
+        http::Request renewal_request{ fmt::format( "{}popn_songs/renewal?name={}", __config.api_endpoint(), Util::URLEncode( query_name ) ) };
+        auto renewal_response = renewal_request.send( "GET" );
+        auto res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
+        if ( res_text == "-2" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        } else if ( res_text == "-1" ) {
+            kakao_sendtext( chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." );
+        } else {
+            kakao_sendtext( chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) );
+        }
+    }
+
     return RETURN_CODE::OK;
 }

@@ -3,6 +3,7 @@
 
 #include "protobuf/achievement.pb.h"
 #include "protobuf/config.pb.h"
+#include "protobuf/popn_songs.pb.h"
 #include "protobuf/sdvx_songs.pb.h"
 #include "protobuf/turtle.pb.h"
 #include <ctime>
