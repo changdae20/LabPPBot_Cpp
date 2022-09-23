@@ -1205,27 +1205,27 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 }
 
                 if ( medal == u"a" ) {
-                    medal = u"⭐";
+                    medal = u"퍼펙";
                 } else if ( medal == u"b" ) {
-                    medal = u"🤍";
+                    medal = u"은별";
                 } else if ( medal == u"c" ) {
-                    medal = u"⬜";
+                    medal = u"은다이아";
                 } else if ( medal == u"d" ) {
-                    medal = u"⚪";
+                    medal = u"은쟁반";
                 } else if ( medal == u"e" ) {
-                    medal = u"🤎";
+                    medal = u"별";
                 } else if ( medal == u"f" ) {
-                    medal = u"🟫";
+                    medal = u"다이아";
                 } else if ( medal == u"g" ) {
-                    medal = u"🟤";
+                    medal = u"클리어";
                 } else if ( medal == u"h" ) {
-                    medal = u"★";
+                    medal = u"흑별";
                 } else if ( medal == u"i" ) {
-                    medal = u"◆";
+                    medal = u"흑다이아";
                 } else if ( medal == u"j" ) {
-                    medal = u"●";
+                    medal = u"불클";
                 } else if ( medal == u"k" ) {
-                    medal = u"🌱";
+                    medal = u"새싹";
                 }
                 kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : {}{}", query_name, score, medal ) );
             }
