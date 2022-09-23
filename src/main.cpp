@@ -72,6 +72,7 @@ int wmain( int argc, wchar_t *argv[] ) {
         }
 
         if ( last_chat == u"Update" && last_idx == -12345 ) {
+            scheduler.detach();
             return -12345;
         } else if ( last_chat == u"Error" && last_idx == -24680 ) {
             auto reload = save_last_chat( __config.chatroom_name() );
