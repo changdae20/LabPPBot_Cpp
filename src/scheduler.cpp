@@ -83,7 +83,14 @@ void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &
                     } else if ( tier.rfind( u"Master", 0 ) == 0 ) {
                         tier_emoji = u"🏆";
                     }
-                    scheduler_message.push_back( fmt::format( u"** 백준 알리미 **\n{}님이 [{}] {} 문제를 해결했습니다!\nRating : {}{} {}", name, level, title, tier_emoji, tier, rating ) );
+
+                    // 맞춘 문제에 대한 정보를 메모리,시간,언어,코드길이,맞춘 시각의 순서로 가져옴.
+                    http::Request solved_info_req{ fmt::format( "{}boj/solved_info?name={}&problem_id={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( problem_id ) ) };
+                    auto solved_info_res = solved_info_req.send( "GET" );
+                    auto solved_info = Util::split( Util::UTF8toUTF16( std::string( solved_info_res.body.begin(), solved_info_res.body.end() ) ), "," );
+                    if ( solved_info.size() != 5 )
+                        continue;
+                    scheduler_message.push_back( fmt::format( u"** 백준 알리미 **\n{}님이 [{}] {} 문제를 해결했습니다!\n언어 : {}\n시간 : {}ms\n메모리 : {}KB\nRating : {}{} {}", name, level, title, solved_info[ 2 ], solved_info[ 1 ], solved_info[ 0 ], tier_emoji, tier, rating ) );
                 }
             }
         }
