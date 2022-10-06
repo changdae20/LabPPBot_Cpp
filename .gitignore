@@ -8,3 +8,4 @@ lib/
 vcpkg/
 main.exe
 src/zara_data.json
+songs/
