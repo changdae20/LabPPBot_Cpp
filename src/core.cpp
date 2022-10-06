@@ -1303,5 +1303,66 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendtext( chatroom_name, fmt::format( u"📖오늘의 문제📖\n제목 : {}\n레벨 : {}\n\nhttps://www.acmicpc.net/problem/{}", splitted[ 1 ], splitted[ 2 ], splitted[ 0 ] ) );
         }
     }
+
+    if ( msg.rfind( u"/곡추천 ", 0 ) == 0 || msg.rfind( u"/추천곡 ", 0 ) == 0 ) { // 랜덤 곡 추천 기능
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string level = u""; // 쿼리용 변수
+        if ( std::regex_match( u8msg, std::regex( u8"(/곡추천) (18|19|20)" ) ) ) {
+            std::regex reg( u8"(/곡추천) (18|19|20)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+            level = Util::UTF8toUTF16( *it );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(/추천곡) (18|19|20)" ) ) ) {
+            std::regex reg( u8"(/추천곡) (18|19|20)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+            level = Util::UTF8toUTF16( *it );
+        } else {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /곡추천 [레벨]" );
+            return RETURN_CODE::OK;
+        }
+
+        http::Request request{ fmt::format( "{}songs/list?level={}", __config.api_endpoint(), Util::URLEncode( level ) ) };
+        auto response = request.send( "GET" );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
+        std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
+        replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+        replaced = "{\"sdvxsongs\":" + replaced + "}";
+        db::SdvxList list;
+        google::protobuf::util::JsonStringToMessage( replaced, &list );
+
+        std::u16string diff = u"";
+        db::SdvxSong song = list.sdvxsongs( Util::rand( 0, list.sdvxsongs_size() - 1 ) );
+        if ( song.code().at( 5 ) == 'N' ) {
+            diff = u"[NOV]";
+        } else if ( song.code().at( 5 ) == 'A' ) {
+            diff = u"[ADV]";
+        } else if ( song.code().at( 5 ) == 'E' ) {
+            diff = u"[EXH]";
+        } else if ( song.code().at( 5 ) == 'I' ) {
+            diff = u"[INF]";
+        } else if ( song.code().at( 5 ) == 'G' ) {
+            diff = u"[GRV]";
+        } else if ( song.code().at( 5 ) == 'H' ) {
+            diff = u"[HVN]";
+        } else if ( song.code().at( 5 ) == 'V' ) {
+            diff = u"[VVD]";
+        } else if ( song.code().at( 5 ) == 'M' ) {
+            diff = u"[MXM]";
+        } else if ( song.code().at( 5 ) == 'X' ) {
+            diff = u"[XCD]";
+        }
+
+        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{} {}", Util::UTF8toUTF16( song.title() ), diff ) );
+        try {
+            std::string lower_code;
+            std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
+            auto frame = cv::imread( fmt::format( "songs/{}/jacket.png", lower_code ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        } catch ( cv::Exception &e ) {
+            kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
+        }
+    }
     return RETURN_CODE::OK;
 }
