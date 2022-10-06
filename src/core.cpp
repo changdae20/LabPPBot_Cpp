@@ -43,12 +43,13 @@ void kakao_sendimage( const std::string &chatroom_name ) {
     if ( hwnd == nullptr ) {
         std::cout << "Chatroom Not Opened!\n";
     } else {
-        auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
+        auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "EVA_VH_ListControl_Dblclk" ), NULL );
         SetForegroundWindow( child_wnd );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        Sleep( 200 );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         SendReturn( GetForegroundWindow() );
-        Sleep( 100 );
+        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
     }
 }
 
