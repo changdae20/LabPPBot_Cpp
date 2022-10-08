@@ -47,6 +47,7 @@ void kakao_sendimage( const std::string &chatroom_name ) {
         SetForegroundWindow( child_wnd );
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
+        PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         SendReturn( GetForegroundWindow() );
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
