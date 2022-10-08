@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <array>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
@@ -365,6 +365,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         } else {
             std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
             replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+            replaced = std::regex_replace( res_text, std::regex( "table_S" ), "tableS" );
+            replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
             db::SdvxSong song;
             google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
             kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
@@ -417,6 +419,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         } else {
             std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
             replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+            replaced = std::regex_replace( res_text, std::regex( "table_S" ), "tableS" );
+            replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
             db::SdvxSong song;
             google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
 
@@ -512,6 +516,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
         replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+        replaced = std::regex_replace( res_text, std::regex( "table_S" ), "tableS" );
+        replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
         db::SdvxSong song;
         google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
         if ( level == u"" ) {
@@ -741,34 +747,152 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 codes.push_back( std::string( *it2 ).substr( 1, 6 ) );
             }
         }
-        http::Request table_request{ fmt::format( "{}table/18PUC_{}.png", __config.storage_server(), codes.size() ) };
-        cv::Mat table;
-        try {
-            const auto table_response = table_request.send( "GET", "", {}, std::chrono::seconds( 15 ) );
-            table = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( table_response.body.data() ), static_cast<std::streamsize>( table_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        } catch ( const http::ResponseError &e ) {
-            if ( std::strcmp( e.what(), "Request timed out" ) == 0 ) { // Request Timeout Error
-                kakao_sendtext( chatroom_name, u"스토리지 서버에서 서열표파일을 가져오는데 실패했습니다." );
+        int my_size = codes.size();
+        http::Request list_request{ fmt::format( "{}songs/list?level=18", __config.api_endpoint() ) };
+        auto list_response = list_request.send( "GET" );
+        auto list_res_text = std::string( list_response.body.begin(), list_response.body.end() );
+        std::string list_replaced = std::regex_replace( list_res_text, std::regex( "chain_vi" ), "chainVi" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "chain_v" ), "chainV" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "table_S" ), "tableS" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "table_PUC" ), "tablePUC" );
+        list_replaced = "{\"sdvxsongs\":" + list_replaced + "}";
+        db::SdvxList list;
+        google::protobuf::util::JsonStringToMessage( list_replaced, &list );
+        std::vector<std::vector<std::string>> table_data( 11, std::vector<std::string>() ); // [0] : 18.0, [1] : 18.1, ..., [9] : 18.9, [10] : undefined의 코드들 모아둠.
+        for ( auto &song : list.sdvxsongs() ) {
+            if ( song.table_puc().length() == 4 && '0' <= song.table_puc().at( 3 ) && song.table_puc().at( 3 ) <= '9' ) {
+                table_data[ song.table_puc().at( 3 ) - '0' ].push_back( song.code() );
             } else {
-                kakao_sendtext( chatroom_name, std::u16string( u"스토리지 서버에서 예상치 못한 에러가 발생했습니다." ) + Util::UTF8toUTF16( std::string( e.what() ) ) );
-            }
-            return RETURN_CODE::OK;
-        }
-
-        http::Request json_request{ fmt::format( "{}table/18PUC ", __config.api_endpoint() ) };
-        response = json_request.send( "GET" );
-        res_text = std::string( response.body.begin(), response.body.end() );
-
-        db::TableList list;
-        google::protobuf::util::JsonStringToMessage( res_text, &list );
-
-        for ( auto &code : codes ) {
-            if ( list.dict().find( code ) != list.dict().end() ) {
-                std::cout << __LINE__ << " | " << code << ", " << list.dict().at( code ).x() << ", " << list.dict().at( code ).y() << std::endl;
-                cv::line( table, cv::Point( list.dict().at( code ).x(), list.dict().at( code ).y() ), cv::Point( list.dict().at( code ).x() + 135, list.dict().at( code ).y() + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
-                cv::line( table, cv::Point( list.dict().at( code ).x() + 135, list.dict().at( code ).y() ), cv::Point( list.dict().at( code ).x(), list.dict().at( code ).y() + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                table_data[ 10 ].push_back( song.code() );
             }
         }
+
+        // 각 레벨별 코드로 정렬 (최신곡이 우하단으로 가도록)
+        for ( auto &line : table_data ) {
+            std::sort( line.begin(), line.end(), []( std::string &a, std::string &b ) {
+                return a.compare( b ) < 0;
+            } );
+        }
+        // 데이터 로드
+        cv::Mat header = cv::imread( "tables/18PUC/header.png" );
+        cv::Mat body = cv::imread( "tables/18PUC/body.png" );
+        cv::Mat footer = cv::imread( "tables/18PUC/footer.png" );
+        cv::Mat table = cv::Mat( header.rows + body.rows * 100, header.cols, CV_8UC3 );
+        header.copyTo( table( cv::Rect( 0, 0, header.cols, header.rows ) ) );
+        for ( int i = 0; i < 100; ++i ) {
+            body.copyTo( table( cv::Rect( 0, header.rows + body.rows * i, body.cols, body.rows ) ) );
+        }
+        int x_cursor = 105;
+        int y_cursor = 705;
+        // 각 레벨별로 마커 삽입
+        for ( int level = 9; level >= 0; --level ) {
+            auto marker = cv::imread( fmt::format( "tables/18PUC/18.{}.png", level ) );
+            marker.copyTo( table( cv::Rect( x_cursor, y_cursor, marker.cols, marker.rows ) ) );
+            y_cursor += table_data[ level ].size() == 0 ? 161 : 161 * ( table_data[ level ].size() / 20 + ( table_data[ level ].size() % 20 == 0 ? 0 : 1 ) );
+        }
+        // 미정 마커도 삽입
+        {
+            auto marker = cv::imread( "tables/18PUC/18.undefined.png" );
+            marker.copyTo( table( cv::Rect( x_cursor, y_cursor, marker.cols, marker.rows ) ) );
+        }
+
+        // 자켓 그리면서 그 코드가 PUC 목록에 있으면 X 그림
+        x_cursor = 362;
+        y_cursor = 705;
+        for ( int level = 9; level >= 0; --level ) {
+            if ( table_data[ level ].size() == 0 ) {
+                y_cursor += 161;
+                continue;
+            }
+            for ( int song_idx = 0; song_idx < table_data[ level ].size(); ++song_idx ) {
+                auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ level ][ song_idx ] ) );
+                cv::resize( jacket, jacket, cv::Size( 136, 136 ) );
+                jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                if ( auto it = std::find( codes.begin(), codes.end(), table_data[ level ][ song_idx ] ); it != codes.end() ) {
+                    cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 135, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    cv::line( table, cv::Point( x_cursor + 135, y_cursor ), cv::Point( x_cursor, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    codes.erase( it );
+                }
+                if ( ( song_idx > 0 && song_idx % 20 == 19 ) || song_idx == table_data[ level ].size() - 1 ) {
+                    x_cursor = 362;
+                    y_cursor += 161;
+                } else {
+                    x_cursor += 142;
+                }
+            }
+        }
+        // 미정인 곡들도 추가
+        if ( table_data[ 10 ].size() == 0 ) {
+            y_cursor += 161;
+        }
+        for ( int song_idx = 0; song_idx < table_data[ 10 ].size(); ++song_idx ) {
+            auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ 10 ][ song_idx ] ) );
+            cv::resize( jacket, jacket, cv::Size( 136, 136 ) );
+            jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+            // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+            if ( auto it = std::find( codes.begin(), codes.end(), table_data[ 10 ][ song_idx ] ); it != codes.end() ) {
+                cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 135, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                cv::line( table, cv::Point( x_cursor + 135, y_cursor ), cv::Point( x_cursor, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                codes.erase( it );
+            }
+            if ( ( song_idx > 0 && song_idx % 20 == 19 ) || song_idx == table_data[ 10 ].size() - 1 ) {
+                x_cursor = 362;
+                y_cursor += 161;
+            } else {
+                x_cursor += 142;
+            }
+        }
+        y_cursor += body.rows - ( ( y_cursor - header.rows ) % body.rows );
+        // 마무리로 footer 및 색칠한 곡의 개수 기록
+        footer.copyTo( table( cv::Rect( 0, y_cursor, footer.cols, footer.rows ) ) );
+        y_cursor += 0; // 80?
+        x_cursor = 3137;
+
+        cv::cvtColor( table, table, cv::COLOR_BGR2BGRA );
+
+        // 전체 곡 개수
+        int total = list.sdvxsongs_size();
+        while ( total ) {
+            int digit = total % 10;
+            cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            total /= 10;
+        }
+        // '/'
+        {
+            cv::Mat digit_im = cv::imread( "tables/nums/slash.png", cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+        }
+        // 달성한 곡
+        if ( my_size == 0 ) {
+            cv::Mat digit_im = cv::imread( "tables/nums/0.png", cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+        }
+        while ( my_size ) {
+            int digit = my_size % 10;
+            cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 14 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            my_size /= 10;
+        }
+
+        // PUC : 글자 추가
+        {
+            cv::Mat digit_im = cv::imread( "tables/nums/PUC.png", cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 30 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+        }
+        table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
+        cv::imwrite( "table_output.png", table );
 
         cv::Mat resized_table;
         cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
@@ -781,7 +905,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (18PUC)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록 {이름} [18PUC]" );
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /서열표 {이름} [18PUC]" );
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
@@ -810,34 +934,152 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                     codes.push_back( std::string( *it2 ).substr( 1, 6 ) );
                 }
             }
-            http::Request table_request{ fmt::format( "{}table/18PUC_{}.png", __config.storage_server(), codes.size() ) };
-            cv::Mat table;
-            try {
-                const auto table_response = table_request.send( "GET", "", {}, std::chrono::seconds( 15 ) );
-                table = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( table_response.body.data() ), static_cast<std::streamsize>( table_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            } catch ( const http::ResponseError &e ) {
-                if ( std::strcmp( e.what(), "Request timed out" ) == 0 ) { // Request Timeout Error
-                    kakao_sendtext( chatroom_name, u"스토리지 서버에서 서열표파일을 가져오는데 실패했습니다." );
+            int my_size = codes.size();
+            http::Request list_request{ fmt::format( "{}songs/list?level=18", __config.api_endpoint() ) };
+            auto list_response = list_request.send( "GET" );
+            auto list_res_text = std::string( list_response.body.begin(), list_response.body.end() );
+            std::string list_replaced = std::regex_replace( list_res_text, std::regex( "chain_vi" ), "chainVi" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "chain_v" ), "chainV" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "table_S" ), "tableS" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "table_PUC" ), "tablePUC" );
+            list_replaced = "{\"sdvxsongs\":" + list_replaced + "}";
+            db::SdvxList list;
+            google::protobuf::util::JsonStringToMessage( list_replaced, &list );
+            std::vector<std::vector<std::string>> table_data( 11, std::vector<std::string>() ); // [0] : 18.0, [1] : 18.1, ..., [9] : 18.9, [10] : undefined의 코드들 모아둠.
+            for ( auto &song : list.sdvxsongs() ) {
+                if ( song.table_puc().length() == 4 && '0' <= song.table_puc().at( 3 ) && song.table_puc().at( 3 ) <= '9' ) {
+                    table_data[ song.table_puc().at( 3 ) - '0' ].push_back( song.code() );
                 } else {
-                    kakao_sendtext( chatroom_name, std::u16string( u"스토리지 서버에서 예상치 못한 에러가 발생했습니다." ) + Util::UTF8toUTF16( std::string( e.what() ) ) );
-                }
-                return RETURN_CODE::OK;
-            }
-
-            http::Request json_request{ fmt::format( "{}table/18PUC ", __config.api_endpoint() ) };
-            response = json_request.send( "GET" );
-            res_text = std::string( response.body.begin(), response.body.end() );
-
-            db::TableList list;
-            google::protobuf::util::JsonStringToMessage( res_text, &list );
-
-            for ( auto &code : codes ) {
-                if ( list.dict().find( code ) != list.dict().end() ) {
-                    std::cout << __LINE__ << " | " << code << ", " << list.dict().at( code ).x() << ", " << list.dict().at( code ).y() << std::endl;
-                    cv::line( table, cv::Point( list.dict().at( code ).x(), list.dict().at( code ).y() ), cv::Point( list.dict().at( code ).x() + 135, list.dict().at( code ).y() + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
-                    cv::line( table, cv::Point( list.dict().at( code ).x() + 135, list.dict().at( code ).y() ), cv::Point( list.dict().at( code ).x(), list.dict().at( code ).y() + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    table_data[ 10 ].push_back( song.code() );
                 }
             }
+
+            // 각 레벨별 코드로 정렬 (최신곡이 우하단으로 가도록)
+            for ( auto &line : table_data ) {
+                std::sort( line.begin(), line.end(), []( std::string &a, std::string &b ) {
+                    return a.compare( b ) < 0;
+                } );
+            }
+            // 데이터 로드
+            cv::Mat header = cv::imread( "tables/18PUC/header.png" );
+            cv::Mat body = cv::imread( "tables/18PUC/body.png" );
+            cv::Mat footer = cv::imread( "tables/18PUC/footer.png" );
+            cv::Mat table = cv::Mat( header.rows + body.rows * 100, header.cols, CV_8UC3 );
+            header.copyTo( table( cv::Rect( 0, 0, header.cols, header.rows ) ) );
+            for ( int i = 0; i < 100; ++i ) {
+                body.copyTo( table( cv::Rect( 0, header.rows + body.rows * i, body.cols, body.rows ) ) );
+            }
+            int x_cursor = 105;
+            int y_cursor = 705;
+            // 각 레벨별로 마커 삽입
+            for ( int level = 9; level >= 0; --level ) {
+                auto marker = cv::imread( fmt::format( "tables/18PUC/18.{}.png", level ) );
+                marker.copyTo( table( cv::Rect( x_cursor, y_cursor, marker.cols, marker.rows ) ) );
+                y_cursor += table_data[ level ].size() == 0 ? 161 : 161 * ( table_data[ level ].size() / 20 + ( table_data[ level ].size() % 20 == 0 ? 0 : 1 ) );
+            }
+            // 미정 마커도 삽입
+            {
+                auto marker = cv::imread( "tables/18PUC/18.undefined.png" );
+                marker.copyTo( table( cv::Rect( x_cursor, y_cursor, marker.cols, marker.rows ) ) );
+            }
+
+            // 자켓 그리면서 그 코드가 PUC 목록에 있으면 X 그림
+            x_cursor = 362;
+            y_cursor = 705;
+            for ( int level = 9; level >= 0; --level ) {
+                if ( table_data[ level ].size() == 0 ) {
+                    y_cursor += 161;
+                    continue;
+                }
+                for ( int song_idx = 0; song_idx < table_data[ level ].size(); ++song_idx ) {
+                    auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ level ][ song_idx ] ) );
+                    cv::resize( jacket, jacket, cv::Size( 136, 136 ) );
+                    jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                    // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                    if ( auto it = std::find( codes.begin(), codes.end(), table_data[ level ][ song_idx ] ); it != codes.end() ) {
+                        cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 135, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                        cv::line( table, cv::Point( x_cursor + 135, y_cursor ), cv::Point( x_cursor, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                        codes.erase( it );
+                    }
+                    if ( ( song_idx > 0 && song_idx % 20 == 19 ) || song_idx == table_data[ level ].size() - 1 ) {
+                        x_cursor = 362;
+                        y_cursor += 161;
+                    } else {
+                        x_cursor += 142;
+                    }
+                }
+            }
+            // 미정인 곡들도 추가
+            if ( table_data[ 10 ].size() == 0 ) {
+                y_cursor += 161;
+            }
+            for ( int song_idx = 0; song_idx < table_data[ 10 ].size(); ++song_idx ) {
+                auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ 10 ][ song_idx ] ) );
+                cv::resize( jacket, jacket, cv::Size( 136, 136 ) );
+                jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                if ( auto it = std::find( codes.begin(), codes.end(), table_data[ 10 ][ song_idx ] ); it != codes.end() ) {
+                    cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 135, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    cv::line( table, cv::Point( x_cursor + 135, y_cursor ), cv::Point( x_cursor, y_cursor + 135 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    codes.erase( it );
+                }
+                if ( ( song_idx > 0 && song_idx % 20 == 19 ) || song_idx == table_data[ 10 ].size() - 1 ) {
+                    x_cursor = 362;
+                    y_cursor += 161;
+                } else {
+                    x_cursor += 142;
+                }
+            }
+            y_cursor += body.rows - ( ( y_cursor - header.rows ) % body.rows );
+            // 마무리로 footer 및 색칠한 곡의 개수 기록
+            footer.copyTo( table( cv::Rect( 0, y_cursor, footer.cols, footer.rows ) ) );
+            y_cursor += 0; // 80?
+            x_cursor = 3137;
+
+            cv::cvtColor( table, table, cv::COLOR_BGR2BGRA );
+
+            // 전체 곡 개수
+            int total = list.sdvxsongs_size();
+            while ( total ) {
+                int digit = total % 10;
+                cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+                total /= 10;
+            }
+            // '/'
+            {
+                cv::Mat digit_im = cv::imread( "tables/nums/slash.png", cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            }
+            // 달성한 곡
+            if ( my_size == 0 ) {
+                cv::Mat digit_im = cv::imread( "tables/nums/0.png", cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            }
+            while ( my_size ) {
+                int digit = my_size % 10;
+                cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 14 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+                my_size /= 10;
+            }
+
+            // PUC : 글자 추가
+            {
+                cv::Mat digit_im = cv::imread( "tables/nums/PUC.png", cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 30 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            }
+            table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
+            cv::imwrite( "table_output.png", table );
 
             cv::Mat resized_table;
             cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
@@ -1071,6 +1313,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
         std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
         replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+        replaced = std::regex_replace( res_text, std::regex( "table_S" ), "tableS" );
+        replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
 
         // protobuf로 만들기 위해 message formatting
         replaced = fmt::format( "{{\"result\":{}}}", replaced );
@@ -1325,6 +1569,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         auto res_text = std::string( response.body.begin(), response.body.end() );
         std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
         replaced = std::regex_replace( res_text, std::regex( "chain_v" ), "chainV" );
+        replaced = std::regex_replace( res_text, std::regex( "table_S" ), "tableS" );
+        replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
         replaced = "{\"sdvxsongs\":" + replaced + "}";
         db::SdvxList list;
         google::protobuf::util::JsonStringToMessage( replaced, &list );

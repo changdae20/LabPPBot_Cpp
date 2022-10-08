@@ -19,6 +19,9 @@ message SdvxSong {
 
     int32 chain_v = 12;
     int32 chain_vi = 13;
+
+    string table_S = 14;
+    string table_PUC = 15;
 }
 
 message SdvxList{
