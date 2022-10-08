@@ -1,4 +1,4 @@
-﻿#include <algorithm>
+#include <algorithm>
 #include <array>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
@@ -722,7 +722,6 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
         auto account_response = account_request.send( "GET" );
         auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        std::cout << __LINE__ << " | " << res_text << std::endl;
         if ( res_text == "{}" ) {
             kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
             return RETURN_CODE::OK;
