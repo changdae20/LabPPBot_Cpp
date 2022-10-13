@@ -212,9 +212,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
-    if ( Util::time_distance( AMPM, time ) >= 3 ) {
-        return RETURN_CODE::ERR;
-    }
+    // if ( Util::time_distance( AMPM, time ) >= 3 ) {
+    //     return RETURN_CODE::ERR;
+    // }
 
     if ( msg == u"/자라" ) {
         if ( Util::rand( 1, 100 ) == 100 ) { // 1%
@@ -878,7 +878,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         while ( my_size ) {
             int digit = my_size % 10;
             cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
-            x_cursor -= ( digit_im.cols + 14 );
+            x_cursor -= ( digit_im.cols + 8 );
             cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
             cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
             my_size /= 10;
@@ -892,7 +892,6 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
         }
         table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
-        cv::imwrite( "table_output.png", table );
 
         cv::Mat resized_table;
         cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
@@ -901,13 +900,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             kakao_sendimage( chatroom_name );
         }
 
-    } else if ( msg.rfind( u"/서열표 ", 0 ) == 0 ) {
-        auto u8msg = Util::UTF16toUTF8( msg );
+    } else if ( auto u8msg = Util::UTF16toUTF8( msg ); std::regex_match( u8msg, std::regex( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (18PUC)" ) ) ) ) {
         std::regex reg( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (18PUC)" ) );
-        if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /서열표 {이름} [18PUC]" );
-            return RETURN_CODE::OK;
-        }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
@@ -1065,7 +1059,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             while ( my_size ) {
                 int digit = my_size % 10;
                 cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
-                x_cursor -= ( digit_im.cols + 14 );
+                x_cursor -= ( digit_im.cols + 8 );
                 cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
                 cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
                 my_size /= 10;
@@ -1079,7 +1073,350 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
             }
             table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
-            cv::imwrite( "table_output.png", table );
+
+            cv::Mat resized_table;
+            cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
+            auto bmp = Util::ConvertCVMatToBMP( resized_table );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 서열표 조회 권한이 없습니다." );
+        }
+    }
+
+    if ( msg == u"/서열표 19S" ) { // 자신의 19S 목록 조회
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        std::regex reg( "//" );
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+        http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        auto response = request.send( "GET" );
+        res_text = std::string( response.body.begin(), response.body.end() );
+        std::vector<std::string> codes;
+        if ( res_text != "[]" ) {
+            std::regex re( "," );
+            std::sregex_token_iterator it2( res_text.begin() + 1, res_text.end() - 1, re, -1 ), end;
+            for ( ; it2 != end; ++it2 ) {
+                codes.push_back( std::string( *it2 ).substr( 1, 6 ) );
+            }
+        }
+        int my_size = codes.size();
+        http::Request list_request{ fmt::format( "{}songs/list?level=19", __config.api_endpoint() ) };
+        auto list_response = list_request.send( "GET" );
+        auto list_res_text = std::string( list_response.body.begin(), list_response.body.end() );
+        std::string list_replaced = std::regex_replace( list_res_text, std::regex( "chain_vi" ), "chainVi" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "chain_v" ), "chainV" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "table_S" ), "tableS" );
+        list_replaced = std::regex_replace( list_replaced, std::regex( "table_PUC" ), "tablePUC" );
+        list_replaced = "{\"sdvxsongs\":" + list_replaced + "}";
+        db::SdvxList list;
+        google::protobuf::util::JsonStringToMessage( list_replaced, &list );
+        std::vector<std::vector<std::string>> table_data( 11, std::vector<std::string>() ); // [0] : 19.0, [1] : 19.1, ..., [9] : 19.9, [10] : undefined의 코드들 모아둠.
+        for ( auto &song : list.sdvxsongs() ) {
+            if ( song.table_s().length() == 4 && '0' <= song.table_s().at( 3 ) && song.table_s().at( 3 ) <= '9' ) {
+                table_data[ song.table_s().at( 3 ) - '0' ].push_back( song.code() );
+            } else {
+                table_data[ 10 ].push_back( song.code() );
+            }
+        }
+        // 각 레벨별 코드로 정렬 (최신곡이 우하단으로 가도록)
+        for ( auto &line : table_data ) {
+            std::sort( line.begin(), line.end(), []( std::string &a, std::string &b ) {
+                return a.compare( b ) < 0;
+            } );
+        }
+        // 데이터 로드
+        cv::Mat header = cv::imread( "tables/19S/header.png" );
+        cv::Mat body = cv::imread( "tables/19S/body.png" );
+        cv::Mat footer = cv::imread( "tables/19S/footer.png" );
+        cv::Mat table = cv::Mat( header.rows + body.rows * 100, header.cols, CV_8UC3 );
+        header.copyTo( table( cv::Rect( 0, 0, header.cols, header.rows ) ) );
+        for ( int i = 0; i < 100; ++i ) {
+            body.copyTo( table( cv::Rect( 0, header.rows + body.rows * i, body.cols, body.rows ) ) );
+        }
+        int x_cursor = 105;
+        int y_cursor = 705;
+        // 각 레벨별로 마커 삽입
+        for ( int level = 9; level >= 0; --level ) {
+            auto marker = cv::imread( fmt::format( "tables/19S/19.{}.png", level ) );
+            marker.copyTo( table( cv::Rect( x_cursor, y_cursor + 45, marker.cols, marker.rows ) ) );
+            y_cursor += table_data[ level ].size() == 0 ? 272 : 272 * ( table_data[ level ].size() / 11 + ( table_data[ level ].size() % 11 == 0 ? 0 : 1 ) );
+        }
+        // 미정 마커도 삽입
+        {
+            auto marker = cv::imread( "tables/19S/19.undefined.png" );
+            marker.copyTo( table( cv::Rect( x_cursor, y_cursor + 45, marker.cols, marker.rows ) ) );
+        }
+
+        // 자켓 그리면서 그 코드가 S 목록에 있으면 X 그림
+        x_cursor = 362;
+        y_cursor = 705;
+        for ( int level = 9; level >= 0; --level ) {
+            if ( table_data[ level ].size() == 0 ) {
+                y_cursor += 161;
+                continue;
+            }
+            for ( int song_idx = 0; song_idx < table_data[ level ].size(); ++song_idx ) {
+                auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ level ][ song_idx ] ) );
+                cv::resize( jacket, jacket, cv::Size( 226, 226 ) );
+                jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                if ( auto it = std::find( codes.begin(), codes.end(), table_data[ level ][ song_idx ] ); it != codes.end() ) {
+                    cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 225, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    cv::line( table, cv::Point( x_cursor + 225, y_cursor ), cv::Point( x_cursor, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    codes.erase( it );
+                }
+                if ( ( song_idx > 0 && song_idx % 11 == 10 ) || song_idx == table_data[ level ].size() - 1 ) {
+                    x_cursor = 362;
+                    y_cursor += 272;
+                } else {
+                    x_cursor += 246;
+                }
+            }
+        }
+        // 미정인 곡들도 추가
+        if ( table_data[ 10 ].size() == 0 ) {
+            y_cursor += 272;
+        }
+        for ( int song_idx = 0; song_idx < table_data[ 10 ].size(); ++song_idx ) {
+            auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ 10 ][ song_idx ] ) );
+            cv::resize( jacket, jacket, cv::Size( 226, 226 ) );
+            jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+            // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+            if ( auto it = std::find( codes.begin(), codes.end(), table_data[ 10 ][ song_idx ] ); it != codes.end() ) {
+                cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 225, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                cv::line( table, cv::Point( x_cursor + 225, y_cursor ), cv::Point( x_cursor, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                codes.erase( it );
+            }
+            if ( ( song_idx > 0 && song_idx % 11 == 10 ) || song_idx == table_data[ 10 ].size() - 1 ) {
+                x_cursor = 362;
+                y_cursor += 272;
+            } else {
+                x_cursor += 246;
+            }
+        }
+        y_cursor += body.rows - ( ( y_cursor - header.rows ) % body.rows );
+        // 마무리로 footer 및 색칠한 곡의 개수 기록
+        footer.copyTo( table( cv::Rect( 0, y_cursor, footer.cols, footer.rows ) ) );
+        y_cursor += 0; // 80?
+        x_cursor = 3137;
+
+        cv::cvtColor( table, table, cv::COLOR_BGR2BGRA );
+
+        // 전체 곡 개수
+        int total = list.sdvxsongs_size();
+        while ( total ) {
+            int digit = total % 10;
+            cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            total /= 10;
+        }
+        // '/'
+        {
+            cv::Mat digit_im = cv::imread( "tables/nums/slash.png", cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+        }
+        // 달성한 곡
+        if ( my_size == 0 ) {
+            cv::Mat digit_im = cv::imread( "tables/nums/0.png", cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+        }
+        while ( my_size ) {
+            int digit = my_size % 10;
+            cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+            x_cursor -= ( digit_im.cols + 8 );
+            cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+            cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            my_size /= 10;
+        }
+
+        table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
+
+        cv::Mat resized_table;
+        cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
+        auto bmp = Util::ConvertCVMatToBMP( resized_table );
+        if ( Util::PasteBMPToClipboard( bmp ) ) {
+            kakao_sendimage( chatroom_name );
+        }
+
+    } else if ( auto u8msg = Util::UTF16toUTF8( msg ); std::regex_match( u8msg, std::regex( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (19S)" ) ) ) ) {
+        std::regex reg( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (19S)" ) );
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        reg = std::regex( "//" );
+        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+
+        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+            auto response = request.send( "GET" );
+            res_text = std::string( response.body.begin(), response.body.end() );
+            std::vector<std::string> codes;
+            if ( res_text != "[]" ) {
+                std::regex re( "," );
+                std::sregex_token_iterator it2( res_text.begin() + 1, res_text.end() - 1, re, -1 ), end;
+                for ( ; it2 != end; ++it2 ) {
+                    codes.push_back( std::string( *it2 ).substr( 1, 6 ) );
+                }
+            }
+            int my_size = codes.size();
+            http::Request list_request{ fmt::format( "{}songs/list?level=19", __config.api_endpoint() ) };
+            auto list_response = list_request.send( "GET" );
+            auto list_res_text = std::string( list_response.body.begin(), list_response.body.end() );
+            std::string list_replaced = std::regex_replace( list_res_text, std::regex( "chain_vi" ), "chainVi" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "chain_v" ), "chainV" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "table_S" ), "tableS" );
+            list_replaced = std::regex_replace( list_replaced, std::regex( "table_PUC" ), "tablePUC" );
+            list_replaced = "{\"sdvxsongs\":" + list_replaced + "}";
+            db::SdvxList list;
+            google::protobuf::util::JsonStringToMessage( list_replaced, &list );
+            std::vector<std::vector<std::string>> table_data( 11, std::vector<std::string>() ); // [0] : 19.0, [1] : 19.1, ..., [9] : 19.9, [10] : undefined의 코드들 모아둠.
+            for ( auto &song : list.sdvxsongs() ) {
+                if ( song.table_s().length() == 4 && '0' <= song.table_s().at( 3 ) && song.table_s().at( 3 ) <= '9' ) {
+                    table_data[ song.table_s().at( 3 ) - '0' ].push_back( song.code() );
+                } else {
+                    table_data[ 10 ].push_back( song.code() );
+                }
+            }
+            // 각 레벨별 코드로 정렬 (최신곡이 우하단으로 가도록)
+            for ( auto &line : table_data ) {
+                std::sort( line.begin(), line.end(), []( std::string &a, std::string &b ) {
+                    return a.compare( b ) < 0;
+                } );
+            }
+            // 데이터 로드
+            cv::Mat header = cv::imread( "tables/19S/header.png" );
+            cv::Mat body = cv::imread( "tables/19S/body.png" );
+            cv::Mat footer = cv::imread( "tables/19S/footer.png" );
+            cv::Mat table = cv::Mat( header.rows + body.rows * 100, header.cols, CV_8UC3 );
+            header.copyTo( table( cv::Rect( 0, 0, header.cols, header.rows ) ) );
+            for ( int i = 0; i < 100; ++i ) {
+                body.copyTo( table( cv::Rect( 0, header.rows + body.rows * i, body.cols, body.rows ) ) );
+            }
+            int x_cursor = 105;
+            int y_cursor = 705;
+            // 각 레벨별로 마커 삽입
+            for ( int level = 9; level >= 0; --level ) {
+                auto marker = cv::imread( fmt::format( "tables/19S/19.{}.png", level ) );
+                marker.copyTo( table( cv::Rect( x_cursor, y_cursor + 45, marker.cols, marker.rows ) ) );
+                y_cursor += table_data[ level ].size() == 0 ? 272 : 272 * ( table_data[ level ].size() / 11 + ( table_data[ level ].size() % 11 == 0 ? 0 : 1 ) );
+            }
+            // 미정 마커도 삽입
+            {
+                auto marker = cv::imread( "tables/19S/19.undefined.png" );
+                marker.copyTo( table( cv::Rect( x_cursor, y_cursor + 45, marker.cols, marker.rows ) ) );
+            }
+
+            // 자켓 그리면서 그 코드가 S 목록에 있으면 X 그림
+            x_cursor = 362;
+            y_cursor = 705;
+            for ( int level = 9; level >= 0; --level ) {
+                if ( table_data[ level ].size() == 0 ) {
+                    y_cursor += 161;
+                    continue;
+                }
+                for ( int song_idx = 0; song_idx < table_data[ level ].size(); ++song_idx ) {
+                    auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ level ][ song_idx ] ) );
+                    cv::resize( jacket, jacket, cv::Size( 226, 226 ) );
+                    jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                    // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                    if ( auto it = std::find( codes.begin(), codes.end(), table_data[ level ][ song_idx ] ); it != codes.end() ) {
+                        cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 225, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                        cv::line( table, cv::Point( x_cursor + 225, y_cursor ), cv::Point( x_cursor, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                        codes.erase( it );
+                    }
+                    if ( ( song_idx > 0 && song_idx % 11 == 10 ) || song_idx == table_data[ level ].size() - 1 ) {
+                        x_cursor = 362;
+                        y_cursor += 272;
+                    } else {
+                        x_cursor += 246;
+                    }
+                }
+            }
+            // 미정인 곡들도 추가
+            if ( table_data[ 10 ].size() == 0 ) {
+                y_cursor += 272;
+            }
+            for ( int song_idx = 0; song_idx < table_data[ 10 ].size(); ++song_idx ) {
+                auto jacket = cv::imread( fmt::format( "songs/{}/jacket.png", table_data[ 10 ][ song_idx ] ) );
+                cv::resize( jacket, jacket, cv::Size( 226, 226 ) );
+                jacket.copyTo( table( cv::Rect( x_cursor, y_cursor, jacket.cols, jacket.rows ) ) );
+                // PUC 목록에 있으면 X표시 하고 목록에서 삭제
+                if ( auto it = std::find( codes.begin(), codes.end(), table_data[ 10 ][ song_idx ] ); it != codes.end() ) {
+                    cv::line( table, cv::Point( x_cursor, y_cursor ), cv::Point( x_cursor + 225, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    cv::line( table, cv::Point( x_cursor + 225, y_cursor ), cv::Point( x_cursor, y_cursor + 225 ), cv::Scalar( 0, 0, 255 ), 10 );
+                    codes.erase( it );
+                }
+                if ( ( song_idx > 0 && song_idx % 11 == 10 ) || song_idx == table_data[ 10 ].size() - 1 ) {
+                    x_cursor = 362;
+                    y_cursor += 272;
+                } else {
+                    x_cursor += 246;
+                }
+            }
+            y_cursor += body.rows - ( ( y_cursor - header.rows ) % body.rows );
+            // 마무리로 footer 및 색칠한 곡의 개수 기록
+            footer.copyTo( table( cv::Rect( 0, y_cursor, footer.cols, footer.rows ) ) );
+            y_cursor += 0; // 80?
+            x_cursor = 3137;
+
+            cv::cvtColor( table, table, cv::COLOR_BGR2BGRA );
+
+            // 전체 곡 개수
+            int total = list.sdvxsongs_size();
+            while ( total ) {
+                int digit = total % 10;
+                cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+                total /= 10;
+            }
+            // '/'
+            {
+                cv::Mat digit_im = cv::imread( "tables/nums/slash.png", cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            }
+            // 달성한 곡
+            if ( my_size == 0 ) {
+                cv::Mat digit_im = cv::imread( "tables/nums/0.png", cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+            }
+            while ( my_size ) {
+                int digit = my_size % 10;
+                cv::Mat digit_im = cv::imread( fmt::format( "tables/nums/{}.png", digit ), cv::IMREAD_UNCHANGED );
+                x_cursor -= ( digit_im.cols + 8 );
+                cv::Mat roi = table( cv::Rect( x_cursor, y_cursor, digit_im.cols, digit_im.rows ) );
+                cv::addWeighted( roi, 1.0, digit_im, 1.0, 0.0, roi );
+                my_size /= 10;
+            }
+
+            table = table( cv::Rect( 0, 0, table.cols, y_cursor + footer.rows ) );
 
             cv::Mat resized_table;
             cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
