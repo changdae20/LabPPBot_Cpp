@@ -212,9 +212,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
-    // if ( Util::time_distance( AMPM, time ) >= 3 ) {
-    //     return RETURN_CODE::ERR;
-    // }
+    if ( Util::time_distance( AMPM, time ) >= 3 ) {
+        return RETURN_CODE::ERR;
+    }
 
     if ( msg == u"/자라" ) {
         if ( Util::rand( 1, 100 ) == 100 ) { // 1%
