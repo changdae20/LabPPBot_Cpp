@@ -1,5 +1,6 @@
 <p align="center"><img width="50%" src="docs/images/LabPPBot.png"/></p>
 <hr/>
+
 # LabPPBot_Cpp ![C++](https://img.shields.io/badge/-C++-505050?logo=c%2B%2B&style=flat)
 
 **LabPPBot_Cpp는 카카오톡 메신저에서 사용가능한 자동화 봇 클라이언트입니다.**
