@@ -22,6 +22,8 @@ message SdvxSong {
 
     string table_S = 14;
     string table_PUC = 15;
+
+    string PUC_video_url = 16;
 }
 
 message SdvxList{
