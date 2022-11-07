@@ -1672,6 +1672,31 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg.rfind( u"/영상 ", 0 ) == 0 || msg.rfind( u"/퍼얼영상 ", 0 ) == 0 ) {
+        auto args = Util::split( msg, " " );
+        http::Response response;
+        if ( args.size() == 2 && args[ 1 ] != u"" ) { // /곡정보 별명
+            http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) };
+            response = request.send( "GET" );
+        } else if ( args.size() == 3 && args[ 1 ] != u"" && args[ 2 ] != u"" ) { // /곡정보 별명 레벨
+            http::Request request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( ( args[ 1 ] ) ) + "&kind=" + Util::URLEncode( ( args[ 2 ] ) ) };
+            response = request.send( "GET" );
+        }
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+        if ( res_text == "{}" ) { // 검색 결과가 없는 경우
+            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            // TODO : 검색통해서 ~~~를 찾으시나요? 출력
+        } else {
+            db::SdvxSong song;
+            google::protobuf::util::JsonStringToMessage( res_text.c_str(), &song );
+            if ( song.puc_video_url() == "" ) {
+                kakao_sendtext( chatroom_name, u"등록된 영상이 없습니다." );
+            } else {
+                kakao_sendtext( chatroom_name, Util::UTF8toUTF16( song.puc_video_url() ) );
+            }
+        }
+    }
+
     // 팝픈뮤직 점수조회
     if ( msg.rfind( u">점수조회 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
