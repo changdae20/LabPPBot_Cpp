@@ -381,25 +381,15 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
-            http::Request jacket_request{ __config.storage_server() + "songs/" + lower_code + "/jacket.png" };
 
             try {
-                const auto jacket_response = jacket_request.send( "GET", "", {}, std::chrono::seconds( 4 ) );
-                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( jacket_response.body.data() ), static_cast<std::streamsize>( jacket_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto frame = cv::imread( fmt::format( "songs/{}/jacket.png", lower_code ), cv::IMREAD_UNCHANGED );
                 auto bmp = Util::ConvertCVMatToBMP( frame );
                 if ( Util::PasteBMPToClipboard( bmp ) ) {
                     kakao_sendimage( chatroom_name );
                 }
-            } catch ( const http::ResponseError &e ) {
-                try {
-                    auto frame = cv::imread( fmt::format( "songs/{}/jacket.png", lower_code ), cv::IMREAD_UNCHANGED );
-                    auto bmp = Util::ConvertCVMatToBMP( frame );
-                    if ( Util::PasteBMPToClipboard( bmp ) ) {
-                        kakao_sendimage( chatroom_name );
-                    }
-                } catch ( cv::Exception &e ) {
-                    kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
-                }
+            } catch ( cv::Exception &e ) {
+                kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
             }
         }
     }
@@ -428,25 +418,15 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
-            http::Request chart_request{ __config.storage_server() + "songs/" + lower_code + "/chart.png" };
 
             try {
-                const auto chart_response = chart_request.send( "GET", "", {}, std::chrono::seconds( 10 ) );
-                auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( chart_response.body.data() ), static_cast<std::streamsize>( chart_response.body.size() ) ), cv::IMREAD_UNCHANGED );
+                auto frame = cv::imread( fmt::format( "songs/{}/chart.png", lower_code ), cv::IMREAD_UNCHANGED );
                 auto bmp = Util::ConvertCVMatToBMP( frame );
                 if ( Util::PasteBMPToClipboard( bmp ) ) {
                     kakao_sendimage( chatroom_name );
                 }
-            } catch ( const http::ResponseError &e ) {
-                try {
-                    auto frame = cv::imread( fmt::format( "songs/{}/chart.png", lower_code ), cv::IMREAD_UNCHANGED );
-                    auto bmp = Util::ConvertCVMatToBMP( frame );
-                    if ( Util::PasteBMPToClipboard( bmp ) ) {
-                        kakao_sendimage( chatroom_name );
-                    }
-                } catch ( cv::Exception &e ) {
-                    kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
-                }
+            } catch ( cv::Exception &e ) {
+                kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
             }
         }
     }
