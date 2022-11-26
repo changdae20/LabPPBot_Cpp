@@ -199,6 +199,8 @@ std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std
             auto ret = execute_command( chatroom_name, tokens[ 0 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ] );
             if ( ret == RETURN_CODE::UPDATE )
                 return std::pair( u"Update", -12345 );
+            else if ( ret == RETURN_CODE::SONGUPDATE )
+                return std::pair( u"Song_Update", -12346 );
             else if ( ret == RETURN_CODE::ERR ) {
                 return std::pair( u"Error", -24680 );
             }
@@ -1528,6 +1530,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
     if ( msg == u"/업데이트" && name == u"손창대" ) {
         kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
         return RETURN_CODE::UPDATE;
+    } else if ( msg == u"/악곡업데이트" && name == u"손창대" ) {
+        kakao_sendtext( chatroom_name, u"악곡업데이트를 진행합니다." );
+        return RETURN_CODE::SONGUPDATE;
     }
 
     if ( msg.rfind( u"/링크 ", 0 ) == 0 ) {

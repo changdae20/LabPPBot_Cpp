@@ -18,6 +18,7 @@
 
 enum class RETURN_CODE {
     UPDATE,
+    SONGUPDATE,
     CLEAR,
     OK,
     ERR
