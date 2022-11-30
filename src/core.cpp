@@ -1970,5 +1970,59 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             u"슬프네요.. 오늘은 실험결과가 좋지않아 야근을 해야할 것 같아요.." };
         kakao_sendtext( chatroom_name, fortune[ Util::rand( 0, fortune.size() - 1 ) ] );
     }
+
+    if ( msg == u"/기린랭킹" ) {
+        http::Request members_request{ fmt::format( "{}member?chatroom_name={}", __config.api_endpoint(), Util::URLEncode( chatroom_name ) ) };
+        auto members_response = members_request.send( "GET" );
+        auto res_text = std::string( members_response.body.begin(), members_response.body.end() );
+        auto res_text_utf16 = Util::UTF8toUTF16( res_text );
+        auto members_with_quote = Util::split( res_text_utf16.substr( 1, res_text_utf16.length() - 2 ), "," );
+
+        if ( members_with_quote.size() == 0 ) {
+            kakao_sendtext( chatroom_name, u"채팅방 정보를 불러올 수 없습니다." );
+            RETURN_CODE::OK;
+        }
+
+        class Turtle {
+        public:
+            Turtle( std::u16string name, int turtle, int zara ) : name( name ), zara( zara ), turtle( turtle ), score( static_cast<float>( turtle ) / ( turtle + zara ) ) {}
+            bool operator>( const Turtle &t ) const {
+                return score > t.score;
+            }
+
+            std::u16string name;
+            int zara;
+            int turtle;
+            float score;
+        };
+
+        std::vector<Turtle> turtle_data;
+        for ( auto &member : members_with_quote ) {
+            http::Request data_request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( member.substr( 1, member.length() - 2 ) ) ) };
+            auto data_response = data_request.send( "GET" );
+            res_text = std::string( data_response.body.begin(), data_response.body.end() );
+            std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
+            std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
+            std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
+            std::vector<int> tokens;
+            for ( ; it != end; ++it )
+                tokens.push_back( std::stoi( *it ) );
+            turtle_data.push_back( Turtle( member.substr( 1, member.length() - 2 ), tokens[ 0 ] + tokens[ 1 ] + tokens[ 2 ] + tokens[ 6 ], tokens[ 3 ] ) );
+        }
+        turtle_data.push_back( Turtle( u"기댓값", 1, 100 ) );
+        std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
+
+        std::u16string result = u"🦒기린랭킹🦒\n";
+        int rank = 0;
+        float prev_score = -1;
+        for ( auto &turtle : turtle_data ) {
+            if ( turtle.name == u"기댓값" ) {
+                result += fmt::format( u"<===== 기댓값 =====>\n" );
+            } else {
+                result += fmt::format( u"{}. {} : {}/{}({:.1f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.zara, turtle.score * 100 );
+            }
+        }
+        kakao_sendtext( chatroom_name, result.substr( 0, result.length() - 1 ) );
+    }
     return RETURN_CODE::OK;
 }
