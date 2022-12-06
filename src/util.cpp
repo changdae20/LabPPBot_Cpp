@@ -58,9 +58,13 @@ int rand( int start, int end ) {
     return dist( gen );
 }
 
-HBITMAP ConvertCVMatToBMP( cv::Mat &frame ) {
+HBITMAP ConvertCVMatToBMP( cv::Mat &frame, bool padding ) {
     auto [ width, height ] = frame.size();
-    cv::resize( frame, frame, cv::Size( ( width + 2 ) - ( width + 2 ) % 4, ( height + 2 ) - ( height + 2 ) % 4 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
+    if ( !padding ) {                                                                                                   // resize mode
+        cv::resize( frame, frame, cv::Size( ( width + 2 ) - ( width + 2 ) % 4, ( height + 2 ) - ( height + 2 ) % 4 ) ); // HBITMAP으로 변환하려면 4의 배수가 되어야 예외 없다고 함. 출처 : https://stackoverflow.com/questions/43656578/convert-mat-to-bitmap-in-windows-application
+    } else {                                                                                                            // padding mode
+        cv::copyMakeBorder( frame, frame, 0, ( 4 - height % 4 ) % 4, 0, ( 4 - width % 4 ) % 4, cv::BORDER_REPLICATE );
+    }
     auto convertOpenCVBitDepthToBits = []( const int32_t value ) {
         auto regular = 0u;
 

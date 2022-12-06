@@ -1606,7 +1606,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 kakao_sendtext( chatroom_name, u"장비를 조회하는 도중에 에러가 발생했습니다. 장비정보가 공개되어있는지 메이플스토리 공식홈페이지에서 한번 더 확인해주세요." );
             } else {
                 auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( image_response.body.data() ), static_cast<std::streamsize>( image_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-                auto bmp = Util::ConvertCVMatToBMP( frame );
+                auto bmp = Util::ConvertCVMatToBMP( frame, true );
                 if ( Util::PasteBMPToClipboard( bmp ) ) {
                     kakao_sendimage( chatroom_name );
                 }

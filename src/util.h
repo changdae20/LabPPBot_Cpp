@@ -30,7 +30,7 @@ int time_distance( std::u16string AMPM, std::u16string time );
 template <typename T, typename UnaryOperation>
 std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::string a, UnaryOperation unary_op );
 int rand( int start, int end );
-HBITMAP ConvertCVMatToBMP( cv::Mat &frame );
+HBITMAP ConvertCVMatToBMP( cv::Mat &frame, bool padding = false );
 bool PasteBMPToClipboard( void *bmp );
 std::string TOUTF8( std::string &multibyte_str );
 std::string URLEncode( const std::string &str );
