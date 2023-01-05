@@ -1958,7 +1958,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
-    if ( msg == u"/오늘의운세" || msg == u"오늘의 운세" ) {
+    if ( msg == u"/오늘의운세" || msg == u"/오늘의 운세" ) {
         const std::array<std::u16string, 8> fortune = {
             u"와! 오늘은 교수님과 박사님이 안계셔요! 칼퇴할 수 있어요.",
             u"오늘의 대박! 오늘은 연차를 내서 집에서 쉴 수 있어요.",
