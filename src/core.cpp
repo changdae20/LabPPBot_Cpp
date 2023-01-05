@@ -315,7 +315,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
         tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
 
-        kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", name, tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+        kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
     } else if ( msg.rfind( u"/인벤 ", 0 ) == 0 || msg.rfind( u"/인벤토리 ", 0 ) == 0 ) { // 타인의 인벤
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
@@ -343,7 +343,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
                 tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
 
-                kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n연챠 거북이 : {}\n단챠 거북이 : {}\n자연산 거북이 : {}\n퀴즈 거북이 : {}\n\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", query_name, tokens[ 0 ], tokens[ 6 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
+                kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", query_name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
             } else {
                 kakao_sendtext( chatroom_name, u"단체방 멤버를 찾을 수 없습니다." );
             }
@@ -1985,8 +1985,14 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
         class Turtle {
         public:
-            Turtle( std::u16string name, int turtle, int zara ) : name( name ), zara( zara ), turtle( turtle ), score( static_cast<float>( turtle ) / ( turtle + zara ) ) {}
+            Turtle( std::u16string name, int turtle, int zara ) : name( name ), zara( zara ), turtle( turtle ), score( ( turtle + zara ) == 0 ? 0.0 : ( static_cast<float>( turtle ) / ( turtle + zara ) ) ) {}
             bool operator>( const Turtle &t ) const {
+                if ( score == t.score ) {
+                    if ( turtle == t.turtle ) {
+                        return zara < t.zara;
+                    }
+                    return turtle > t.turtle;
+                }
                 return score > t.score;
             }
 
@@ -2007,7 +2013,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::vector<int> tokens;
             for ( ; it != end; ++it )
                 tokens.push_back( std::stoi( *it ) );
-            turtle_data.push_back( Turtle( member.substr( 1, member.length() - 2 ), tokens[ 0 ] + tokens[ 1 ] + tokens[ 2 ] + tokens[ 6 ], tokens[ 3 ] ) );
+            turtle_data.push_back( Turtle( member.substr( 1, member.length() - 2 ), tokens[ 0 ], tokens[ 3 ] ) );
         }
         turtle_data.push_back( Turtle( u"기댓값", 1, 100 ) );
         std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
@@ -2019,7 +2025,8 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             if ( turtle.name == u"기댓값" ) {
                 result += fmt::format( u"<===== 기댓값 =====>\n" );
             } else {
-                result += fmt::format( u"{}. {} : {}/{}({:.1f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.zara, turtle.score * 100 );
+                result += fmt::format( u"{}. {} : {}/{}({:.1f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.turtle + turtle.zara, turtle.score * 100 );
+                prev_score = turtle.score;
             }
         }
         kakao_sendtext( chatroom_name, result.substr( 0, result.length() - 1 ) );
