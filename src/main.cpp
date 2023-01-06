@@ -2,6 +2,7 @@
 #pragma comment( lib, "ws2_32.lib" )
 
 #include <fstream>
+#include <future>
 #include <google/protobuf/util/json_util.h>
 #include <mutex>
 #include <string>
@@ -26,6 +27,9 @@ config::Config __config;
 // multi-threading으로 구현한 scheduler
 std::mutex m;
 std::vector<std::u16string> scheduler_message;
+
+// multi-threading으로 구현한 renewal
+std::vector<std::future<std::u16string>> renewal_threads;
 
 int wmain( int argc, wchar_t *argv[] ) {
     std::string json;
@@ -64,11 +68,25 @@ int wmain( int argc, wchar_t *argv[] ) {
             if ( !scheduler_message.empty() ) {
                 for ( auto &msg : scheduler_message ) {
                     kakao_sendtext( __config.chatroom_name(), msg );
-                    Sleep( 500 );
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
                 }
                 scheduler_message.clear();
             }
             m.unlock();
+        }
+
+        // 갱신 스레드 종료된거 있으면 join하고 삭제
+        {
+            for ( auto it = renewal_threads.begin(); it != renewal_threads.end(); ) {
+                if ( auto status = it->wait_for( std::chrono::seconds( 0 ) ); status == std::future_status::ready ) {
+                    auto message = it->get();
+                    it = renewal_threads.erase( it );
+                    kakao_sendtext( __config.chatroom_name(), message );
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
+                } else {
+                    ++it;
+                }
+            }
         }
 
         if ( last_chat == u"Update" && last_idx == -12345 ) {
