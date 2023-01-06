@@ -5,6 +5,7 @@
 #include <future>
 #include <google/protobuf/util/json_util.h>
 #include <iostream>
+#include <numeric>
 #include <regex>
 #include <string>
 #include <utility>
@@ -2008,6 +2009,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         };
 
         std::vector<Turtle> turtle_data;
+
+        auto insert_zero_width_space = []( std::u16string str ) {
+            return std::accumulate( str.begin(), str.end(), std::u16string(), []( std::u16string a, char16_t b ) {
+                return a + u"\u200B" + b;
+            } );
+        };
+
         for ( auto &member : members_with_quote ) {
             http::Request data_request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( member.substr( 1, member.length() - 2 ) ) ) };
             auto data_response = data_request.send( "GET" );
@@ -2018,7 +2026,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::vector<int> tokens;
             for ( ; it != end; ++it )
                 tokens.push_back( std::stoi( *it ) );
-            turtle_data.push_back( Turtle( member.substr( 1, member.length() - 2 ), tokens[ 0 ], tokens[ 3 ] ) );
+            turtle_data.push_back( Turtle( insert_zero_width_space( member.substr( 1, member.length() - 2 ) ), tokens[ 0 ], tokens[ 3 ] ) );
         }
         turtle_data.push_back( Turtle( u"기댓값", 1, 100 ) );
         std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
