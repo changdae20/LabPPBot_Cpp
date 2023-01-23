@@ -18,8 +18,12 @@ link_directories(
 
 set(protobuf_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/protobuf_x64-windows/share/protobuf)
 set(fmt_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/fmt_x64-windows/share/fmt)
+set(freetype_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/freetype_x64-windows/share/freetype)
+set(ZLIB_LIBRARY ${CMAKE_SOURCE_DIR}/vcpkg/packages/zlib_x64-windows/lib)
+set(ZLIB_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/vcpkg/packages/zlib_x64-windows/share/include)
 
 find_package(fmt CONFIG REQUIRED)
+find_package(freetype CONFIG REQUIRED)
 
 SET(LabPPBot_Cpp_LIB
     COMPILED_PROTOBUF
@@ -55,4 +59,5 @@ target_link_libraries(${PROJECT_NAME}
     libprotobuf 
     libprotobuf-lite
     fmt::fmt
+    freetype
 )

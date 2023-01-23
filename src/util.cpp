@@ -1,6 +1,57 @@
 ﻿#include "util.h"
 
 namespace Util {
+void my_draw_bitmap( cv::Mat &img, FT_Bitmap *bitmap, int x, int y, cv::Scalar color ) {
+    cv::Scalar src_col, dst_col;
+    for ( int i = 0; i < bitmap->rows; i++ ) {
+        for ( int j = 0; j < bitmap->width; j++ ) {
+            unsigned char val = bitmap->buffer[ j + i * bitmap->pitch ];
+            float mix = ( float )val / 255.0;
+            if ( val != 0 ) {
+                src_col = cv::Scalar( img.at<cv::Vec3b>( i + y, j + x ) );
+                dst_col = mix * color + ( 1.0 - mix ) * src_col;
+                img.at<cv::Vec3b>( i + y, j + x ) = cv::Vec3b( dst_col[ 0 ], dst_col[ 1 ], dst_col[ 2 ] );
+            }
+        }
+    }
+}
+float PrintString( cv::Mat &img, std::u32string str, int x, int y, cv::Scalar color, FT_Face &face ) {
+    FT_Bool use_kerning = 0;
+    FT_UInt previous = 0;
+    use_kerning = FT_HAS_KERNING( face );
+    float prev_yadv = 0;
+    float posx = 0;
+    float posy = 0;
+    float dx = 0;
+    for ( int k = 0; k < str.length(); k++ ) {
+        int glyph_index = FT_Get_Char_Index( face, str.c_str()[ k ] );
+        FT_GlyphSlot slot = face->glyph; // a small shortcut
+        if ( k > 0 ) {
+            dx = slot->advance.x / 64;
+        }
+        FT_Load_Glyph( face, glyph_index, FT_LOAD_DEFAULT | FT_LOAD_COLOR );
+        // FT_Render_Glyph (slot,FT_RENDER_MODE_NORMAL);
+        prev_yadv = slot->metrics.vertAdvance / 64;
+        if ( use_kerning && previous && glyph_index ) {
+            FT_Vector delta;
+            FT_Get_Kerning( face, previous, glyph_index, FT_KERNING_DEFAULT, &delta );
+            posx += ( delta.x / 64 );
+        }
+        posx += ( dx );
+        my_draw_bitmap( img, &slot->bitmap, posx + x + slot->bitmap_left, y - slot->bitmap_top + posy, color );
+        previous = glyph_index;
+    }
+    return prev_yadv;
+}
+void PrintText( cv::Mat &img, std::u32string str, int x, int y, cv::Scalar color, FT_Face &face ) {
+    float posy = 0;
+    for ( int pos = str.find_first_of( u'\n' ); pos != std::u16string::npos; pos = str.find_first_of( u'\n' ) ) {
+        std::u32string substr = str.substr( 0, pos );
+        str.erase( 0, pos + 1 );
+        posy += PrintString( img, substr, x, y + posy, color, face );
+    }
+    PrintString( img, str, x, y + posy, color, face );
+}
 int time_distance( std::u16string AMPM, std::u16string stime ) {
     std::time_t t = time( NULL );
     struct tm *tm = localtime( &t );

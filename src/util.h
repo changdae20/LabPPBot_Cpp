@@ -19,6 +19,9 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "ft2build.h"
+#include FT_FREETYPE_H
+
 template <typename Test, template <typename...> class Ref>
 struct is_specialization : std::false_type {};
 
@@ -26,6 +29,9 @@ template <template <typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
 namespace Util {
+void my_draw_bitmap( cv::Mat &img, FT_Bitmap *bitmap, int x, int y, cv::Scalar color );
+float PrintString( cv::Mat &img, std::u32string str, int x, int y, cv::Scalar color, FT_Face &face );
+void PrintText( cv::Mat &img, std::u32string str, int x, int y, cv::Scalar color, FT_Face &face );
 int time_distance( std::u16string AMPM, std::u16string time );
 template <typename T, typename UnaryOperation>
 std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::string a, UnaryOperation unary_op );
