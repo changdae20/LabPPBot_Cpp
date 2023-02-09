@@ -26,6 +26,9 @@ template <template <typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
 namespace Util {
+int parse_int( const std::u16string &str );
+cv::Mat base642Mat( const std::string &in );
+std::string base64_decode( const std::string &in );
 int time_distance( std::u16string AMPM, std::u16string time );
 template <typename T, typename UnaryOperation>
 std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::string a, UnaryOperation unary_op );

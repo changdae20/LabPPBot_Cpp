@@ -31,6 +31,9 @@ std::vector<std::u16string> scheduler_message;
 // multi-threading으로 구현한 renewal
 std::vector<std::future<std::u16string>> renewal_threads;
 
+// multi-threading으로 구현한 image generation, (future of cv::Mat, start time)의 벡터
+std::vector<std::pair<std::future<cv::Mat>, std::chrono::system_clock::time_point>> image_threads;
+
 int wmain( int argc, wchar_t *argv[] ) {
     std::string json;
     std::getline( std::ifstream( "src/config.json" ), json, '\0' );
@@ -83,6 +86,33 @@ int wmain( int argc, wchar_t *argv[] ) {
                     it = renewal_threads.erase( it );
                     kakao_sendtext( __config.chatroom_name(), message );
                     std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        // AI 스레드 종료된거 있으면 join하고 삭제
+        {
+            for ( auto it = image_threads.begin(); it != image_threads.end(); ) {
+                if ( auto status = it->first.wait_for( std::chrono::seconds( 0 ) ); status == std::future_status::ready ) {
+                    auto image = it->first.get();
+                    auto start_time = it->second;
+                    it = image_threads.erase( it );
+
+                    // check filter
+                    if ( std::all_of( image.begin<cv::Vec3b>(), image.end<cv::Vec3b>(), []( const cv::Vec3b &pixel ) { return pixel[ 0 ] == 0 && pixel[ 1 ] == 0 && pixel[ 2 ] == 0; } ) ) {
+                        image = cv::imread( fmt::format( "tables/filter/filter{}.png", Util::rand( 1, 12 ) ) );
+                    }
+
+                    auto end_time = std::chrono::system_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>( end_time - start_time ).count();
+                    auto bmp = Util::ConvertCVMatToBMP( image );
+                    if ( Util::PasteBMPToClipboard( bmp ) ) {
+                        kakao_sendimage( __config.chatroom_name() );
+                    }
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 500 ) );
+                    kakao_sendtext( __config.chatroom_name(), u"소요시간 : " + Util::UTF8toUTF16( std::to_string( elapsed ) ) + u"ms" );
                 } else {
                     ++it;
                 }

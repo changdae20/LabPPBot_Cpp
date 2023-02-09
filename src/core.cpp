@@ -20,6 +20,9 @@ extern config::Config __config;
 // /갱신, >갱신에서 사용할 스레드
 extern std::vector<std::future<std::u16string>> renewal_threads;
 
+// /AI에서 사용할 스레드
+extern std::vector<std::pair<std::future<cv::Mat>, std::chrono::system_clock::time_point>> image_threads;
+
 std::u16string quiz_answer;
 std::vector<std::u16string> hint_request;
 
@@ -2043,6 +2046,120 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             }
         }
         kakao_sendtext( chatroom_name, result.substr( 0, result.length() - 1 ) );
+    }
+
+    if ( msg.rfind( u"/AI\n", 0 ) == 0 ) {
+        auto splitted = Util::split( msg, "\n" );
+        std::string json;
+        std::getline( std::ifstream( "ai_config.json" ), json, '\0' );
+        ai::Config aiconfig;
+        google::protobuf::util::JsonStringToMessage( json, &aiconfig );
+
+        if ( auto it = std::find( aiconfig.permission().begin(), aiconfig.permission().end(), Util::UTF16toUTF8( name ) ); it == aiconfig.permission().end() ) {
+            kakao_sendtext( chatroom_name, u"/AI 명령어를 사용할 권한이 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        if ( splitted.size() < 2 ) {
+            kakao_sendtext( chatroom_name, u"사용법:\n/AI\n[<]positive prompt]\n{negative prompt}" );
+            return RETURN_CODE::OK;
+        } else if ( splitted.size() == 2 && splitted[ 1 ].length() > 0 ) {
+            auto positive_prompt = splitted[ 1 ];
+
+            // replace aiconfig.banned_keywords() as empty string
+            for ( auto &keyword : aiconfig.banned_keywords() ) {
+                positive_prompt = Util::UTF8toUTF16( std::regex_replace( Util::UTF16toUTF8( positive_prompt ), std::regex( keyword ), "" ) );
+            }
+
+            image_threads.push_back( std::pair( std::async(
+                                                    std::launch::async, []( ai::Config &aiconfig, std::u16string &positive_prompt ) -> cv::Mat {
+                                                        http::Request request{ fmt::format( "{}?width={}&height={}&steps={}&prompt={}", aiconfig.api_endpoint(), aiconfig.width(), aiconfig.height(), aiconfig.step(), Util::URLEncode( positive_prompt ) ) };
+                                                        auto response = request.send( "GET", std::vector<uint8_t>(), { { "apikey", aiconfig.api_key() } } );
+                                                        auto res_text = std::string( response.body.begin(), response.body.end() );
+                                                        auto after_base64 = Util::base64_decode( res_text );
+                                                        auto image = Util::base642Mat( after_base64 );
+                                                        return image;
+                                                    },
+                                                    aiconfig, positive_prompt ),
+                                                std::chrono::system_clock::now() ) );
+            return RETURN_CODE::OK;
+        }
+    }
+
+    if ( msg == u"/AI설정" && name == u"손창대" ) {
+        std::string json;
+        std::getline( std::ifstream( "ai_config.json" ), json, '\0' );
+        ai::Config aiconfig;
+        google::protobuf::util::JsonStringToMessage( json, &aiconfig );
+
+        kakao_sendtext( chatroom_name, fmt::format( u"<< 현재 AI 설정 >>\n- width : {}\n- height : {}\n- steps : {}", aiconfig.width(), aiconfig.height(), aiconfig.step() ) );
+    }
+
+    if ( msg.rfind( u"/AI설정 ", 0 ) == 0 && name == u"손창대" ) {
+        std::string json;
+        std::getline( std::ifstream( "ai_config.json" ), json, '\0' );
+        ai::Config aiconfig;
+        google::protobuf::util::JsonStringToMessage( json, &aiconfig );
+
+        auto splitted = Util::split( msg, " " );
+        if ( splitted.size() > 1 ) {
+            for ( auto &s : splitted ) {
+                if ( s.rfind( u"--w=", 0 ) == 0 ) {
+                    int width = Util::parse_int( s.substr( 4 ) );
+                    if ( width == -1 || width % 64 != 0 ) {
+                        kakao_sendtext( chatroom_name, u"width는 64의 배수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_width( width );
+                    }
+                } else if ( s.rfind( u"--width=", 0 ) == 0 ) {
+                    int width = Util::parse_int( s.substr( 8 ) );
+                    if ( width == -1 || width % 64 != 0 ) {
+                        kakao_sendtext( chatroom_name, u"width는 64의 배수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_width( width );
+                    }
+                } else if ( s.rfind( u"--h=", 0 ) == 0 ) {
+                    int height = Util::parse_int( s.substr( 4 ) );
+                    if ( height == -1 || height % 64 != 0 ) {
+                        kakao_sendtext( chatroom_name, u"height는 64의 배수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_height( height );
+                    }
+                } else if ( s.rfind( u"--height=", 0 ) == 0 ) {
+                    int height = Util::parse_int( s.substr( 9 ) );
+                    if ( height == -1 || height % 64 != 0 ) {
+                        kakao_sendtext( chatroom_name, u"height는 64의 배수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_height( height );
+                    }
+                } else if ( s.rfind( u"--s=", 0 ) == 0 ) {
+                    int step = Util::parse_int( s.substr( 4 ) );
+                    if ( step <= 0 ) {
+                        kakao_sendtext( chatroom_name, u"step은 양의 정수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_step( step );
+                    }
+                } else if ( s.rfind( u"--step=", 0 ) == 0 ) {
+                    int step = Util::parse_int( s.substr( 7 ) );
+                    if ( step <= 0 ) {
+                        kakao_sendtext( chatroom_name, u"step은 양의 정수여야 합니다." );
+                        break;
+                    } else {
+                        aiconfig.set_step( step );
+                    }
+                }
+            }
+            // save config with whitespace
+            std::string json;
+            google::protobuf::util::JsonPrintOptions options;
+            options.add_whitespace = true;
+            google::protobuf::util::MessageToJsonString( aiconfig, &json, options );
+            std::ofstream( "ai_config.json" ) << json;
+        }
     }
     return RETURN_CODE::OK;
 }
