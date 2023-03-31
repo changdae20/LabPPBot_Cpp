@@ -26,6 +26,7 @@ template <template <typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
 namespace Util {
+bool is_April_Fools_Day();
 int parse_int( const std::u16string &str );
 cv::Mat base642Mat( const std::string &in );
 std::string base64_decode( const std::string &in );

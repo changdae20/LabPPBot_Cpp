@@ -1,6 +1,11 @@
 ﻿#include "util.h"
 
 namespace Util {
+bool is_April_Fools_Day() {
+    time_t now = time( 0 );
+    tm *ltm = localtime( &now );
+    return ltm->tm_mon == 3 && ltm->tm_mday == 1;
+}
 int parse_int( const std::u16string &str ) {
     auto u8 = UTF16toUTF8( str );
     if ( !u8.empty() && u8.find_first_not_of( "0123456789" ) == std::string::npos ) {
