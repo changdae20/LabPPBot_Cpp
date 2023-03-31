@@ -38,22 +38,22 @@ void kakao_sendtext( const std::string &chatroom_name, const std::u16string &tex
     if ( hwnd == nullptr ) {
         std::cout << "Chatroom Not Opened!\n";
     } else {
-        if(Util::is_April_Fools_Day()){
-            std::string temp = Util::UTF16toUTF8(text);
+        if ( Util::is_April_Fools_Day() ) {
+            std::string temp = Util::UTF16toUTF8( text );
             std::u16string u16turtle = u"거북이";
             std::u16string u16zara = u"자라";
-            std::string turtle = Util::UTF16toUTF8(u16turtle);
-            std::string zara = Util::UTF16toUTF8(u16zara);
+            std::string turtle = Util::UTF16toUTF8( u16turtle );
+            std::string zara = Util::UTF16toUTF8( u16zara );
 
             temp = std::regex_replace( temp, std::regex( zara ), "ENJOY_APRIL_FOOLS_DAY" );
             temp = std::regex_replace( temp, std::regex( turtle ), zara );
             temp = std::regex_replace( temp, std::regex( "ENJOY_APRIL_FOOLS_DAY" ), turtle );
-            std::u16string u16temp = Util::UTF8toUTF16(temp);
+            std::u16string u16temp = Util::UTF8toUTF16( temp );
             auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
             // std::cout << child_wnd << std::endl;
             ::SendMessageW( child_wnd, WM_SETTEXT, 0, reinterpret_cast<LPARAM>( u16temp.c_str() ) );
             SendReturn( child_wnd );
-        }else{
+        } else {
             // std::cout << "Chatroom is Opened, hwnd : " << hwnd << "\n";
             auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
             // std::cout << child_wnd << std::endl;
@@ -243,7 +243,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::ERR;
     }
 
-    if ( (msg == u"/자라" && !Util::is_April_Fools_Day()) || (msg == u"/거북이" && Util::is_April_Fools_Day()) ) {
+    if ( ( msg == u"/자라" && !Util::is_April_Fools_Day() ) || ( msg == u"/거북이" && Util::is_April_Fools_Day() ) ) {
         if ( Util::rand( 1, 100 ) == 100 ) { // 1%
             kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
         } else {
@@ -252,7 +252,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
-    if ( (msg == u"/자라자라" && !Util::is_April_Fools_Day()) || (msg == u"/거북이거북이" && Util::is_April_Fools_Day()) ) {
+    if ( ( msg == u"/자라자라" && !Util::is_April_Fools_Day() ) || ( msg == u"/거북이거북이" && Util::is_April_Fools_Day() ) ) {
         if ( std::ifstream( "src/zara_data.json" ).fail() ) {
             std::cout << "Fail!" << std::endl;
             std::ofstream o( "src/zara_data.json" );
@@ -315,7 +315,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         return RETURN_CODE::OK;
     }
 
-    if ( (msg == u"/거북이" && !Util::is_April_Fools_Day()) || (msg == u"/자라" && Util::is_April_Fools_Day()) ) {
+    if ( ( msg == u"/거북이" && !Util::is_April_Fools_Day() ) || ( msg == u"/자라" && Util::is_April_Fools_Day() ) ) {
         if ( std::ifstream( "src/zara_data.json" ).fail() ) { // 저장 파일 못찾은 경우
             int zara_count = 0;
         }
@@ -2046,15 +2046,15 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::vector<int> tokens;
             for ( ; it != end; ++it )
                 tokens.push_back( std::stoi( *it ) );
-            if(Util::is_April_Fools_Day()){
+            if ( Util::is_April_Fools_Day() ) {
                 turtle_data.push_back( Turtle( insert_zero_width_space( member.substr( 1, member.length() - 2 ) ), tokens[ 3 ], tokens[ 0 ] ) );
-            }else{
+            } else {
                 turtle_data.push_back( Turtle( insert_zero_width_space( member.substr( 1, member.length() - 2 ) ), tokens[ 0 ], tokens[ 3 ] ) );
             }
         }
-        if(Util::is_April_Fools_Day()){
+        if ( Util::is_April_Fools_Day() ) {
             turtle_data.push_back( Turtle( u"기댓값", 99, 1 ) );
-        } else{
+        } else {
             turtle_data.push_back( Turtle( u"기댓값", 1, 99 ) );
         }
         std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
