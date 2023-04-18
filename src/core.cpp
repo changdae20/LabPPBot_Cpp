@@ -2029,7 +2029,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 tokens.push_back( std::stoi( *it ) );
             turtle_data.push_back( Turtle( insert_zero_width_space( member.substr( 1, member.length() - 2 ) ), tokens[ 0 ], tokens[ 3 ] ) );
         }
-        turtle_data.push_back( Turtle( u"기댓값", 1, 100 ) );
+        turtle_data.push_back( Turtle( u"기댓값", 1, 99 ) );
         std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
 
         std::u16string result = u"🦒기린랭킹🦒\n";
