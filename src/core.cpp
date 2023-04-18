@@ -1965,6 +1965,35 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg.rfind( u">곡추천 ", 0 ) == 0 || msg.rfind( u">추천곡 ", 0 ) == 0 ) { // 랜덤 곡 추천 기능
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string level = u""; // 쿼리용 변수
+        if ( std::regex_match( u8msg, std::regex( u8"(>곡추천) (47|48|49|50)" ) ) ) {
+            std::regex reg( u8"(>곡추천) (47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+            level = Util::UTF8toUTF16( *it );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>추천곡) (47|48|49|50)" ) ) ) {
+            std::regex reg( u8"(>추천곡) (47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+            level = Util::UTF8toUTF16( *it );
+        } else {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >곡추천 [레벨]" );
+            return RETURN_CODE::OK;
+        }
+
+        http::Request request{ fmt::format( "{}popn_songs/list?level={}", __config.api_endpoint(), Util::URLEncode( level ) ) };
+        auto response = request.send( "GET" );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
+        res_text = "{\"popnsongs\":" + res_text + "}";
+        popndb::PopnList list;
+        google::protobuf::util::JsonStringToMessage( res_text, &list );
+
+        std::u16string diff = u"";
+        popndb::PopnSong song = list.popnsongs( Util::rand( 0, list.popnsongs_size() - 1 ) );
+
+        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{}\n({})", Util::UTF8toUTF16( song.title() ), Util::UTF8toUTF16( song.nick1() ) ) );
+    }
+
     if ( msg == u"/오늘의운세" || msg == u"/오늘의 운세" ) {
         const std::array<std::u16string, 8> fortune = {
             u"와! 오늘은 교수님과 박사님이 안계셔요! 칼퇴할 수 있어요.",
