@@ -383,7 +383,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                                                u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
                                                u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
                                                u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) +
-                                               ( ( song.level() == 18 ) ? ( u"\nPUC 서열표 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) );
+                                               ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) );
 
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
@@ -1951,7 +1951,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             diff = u"[XCD]";
         }
 
-        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{} {}", Util::UTF8toUTF16( song.title() ), diff ) );
+        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{} {}{}", Util::UTF8toUTF16( song.title() ), diff, ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) ) );
         try {
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
