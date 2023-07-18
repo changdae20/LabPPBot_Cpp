@@ -52,7 +52,9 @@ void kakao_sendimage( const std::string &chatroom_name ) {
         SetForegroundWindow( child_wnd );
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
+        if ( GetForegroundWindow() == child_wnd ) {
+            PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
+        }
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
         SendReturn( GetForegroundWindow() );
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
@@ -1828,6 +1830,91 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             }
         } else {
             kakao_sendtext( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) );
+        }
+    }
+
+    // 팝픈뮤직 곡정보
+    if ( msg.rfind( u">곡정보 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string title, level, nick;                                                                          // 쿼리용 변수
+        http::Response title_response;                                                                              // 결과
+        if ( std::regex_match( u8msg, std::regex( u8"(>곡정보) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" ) ) ) { // >곡정보 곡명 레벨
+            std::regex reg( u8"(>점수조회) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            auto nick = Util::UTF8toUTF16( *( it++ ) );
+            level = Util::UTF8toUTF16( *it );
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( level ) };
+            title_response = title_request.send( "GET" );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>곡정보) ([\\s\\S]+)" ) ) ) { // >곡정보 곡명
+            std::regex reg( u8"(>곡정보) ([\\s\\S]+)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } ), end;
+            auto nick = Util::UTF8toUTF16( *( it ) );
+            level = u"";
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+            title_response = title_request.send( "GET" );
+        }
+
+        std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
+
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            return RETURN_CODE::OK;
+            // TODO : 검색으로 ~를 찾으시나요? 출력
+        }
+        popndb::PopnSong song;
+        google::protobuf::util::JsonStringToMessage( res_text.c_str(), &song );
+        if ( level == u"" ) {
+            level = Util::UTF8toUTF16( std::to_string( song.level() ) );
+        }
+
+        kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
+                                           u"\n장르 : " + Util::UTF8toUTF16( song.genre() ) +
+                                           u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
+                                           u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
+                                           u"\n곡 길이 : " + ( ( song.duration() == "??:??" ) ? u"정보 없음" : Util::UTF8toUTF16( song.duration() ) ) +
+                                           u"\n노트수 : " + Util::UTF8toUTF16( std::to_string( song.notes() ) ) +
+                                           ( ( song.notes() >= 1537 ) ? u"(짠게)" : ( ( song.notes() <= 1024 ) ? u"(단게)" : u"" ) ) );
+    }
+
+    // 팝픈뮤직 채보
+    if ( msg.rfind( u">채보 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::u16string title, level, nick;                                                                        // 쿼리용 변수
+        http::Response title_response;                                                                            // 결과
+        if ( std::regex_match( u8msg, std::regex( u8"(>채보) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" ) ) ) { // >채보 곡명 레벨
+            std::regex reg( u8"(>점수조회) ([\\s\\S]+) (41|42|43|44|45|46|47|48|49|50)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2, 3 } ), end;
+            auto nick = Util::UTF8toUTF16( *( it++ ) );
+            level = Util::UTF8toUTF16( *it );
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( level ) };
+            title_response = title_request.send( "GET" );
+        } else if ( std::regex_match( u8msg, std::regex( u8"(>채보) ([\\s\\S]+)" ) ) ) { // >채보 곡명
+            std::regex reg( u8"(>채보) ([\\s\\S]+)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } ), end;
+            auto nick = Util::UTF8toUTF16( *( it ) );
+            level = u"";
+            http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+            title_response = title_request.send( "GET" );
+        }
+
+        std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
+
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            return RETURN_CODE::OK;
+            // TODO : 검색으로 ~를 찾으시나요? 출력
+        }
+        popndb::PopnSong song;
+        google::protobuf::util::JsonStringToMessage( res_text.c_str(), &song );
+
+        try {
+            auto frame = cv::imread( fmt::format( "songs/popn_songs/{}/chart.png", song.id() ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        } catch ( cv::Exception &e ) {
+            kakao_sendtext( chatroom_name, fmt::format( u"이미지를 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
         }
     }
 
