@@ -2161,5 +2161,43 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         kakao_sendtext( chatroom_name, result.substr( 0, result.length() - 1 ) );
     }
+
+    if ( msg.rfind( u"/시세 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        if ( std::regex_match( u8msg, std::regex( u8"/시세 (앱솔|아케인)(무기|방어구)" ) ) ) {
+            std::regex reg( u8"/시세 (앱솔|아케인)(무기|방어구)" );
+            std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 1, 2 } );
+            std::string kind = Util::UTF8toUTF16( *it++ ) == u"앱솔" ? "absol" : "arcane";
+            std::string equipment = Util::UTF8toUTF16( *it ) == u"무기" ? "weapon" : "shield";
+
+            http::Request request{ fmt::format( "{}price?kind={}&equipment={}", __config.api_endpoint(), kind, equipment ) };
+            auto response = request.send( "GET" );
+            auto res_text = std::string( response.body.begin(), response.body.end() );
+            item::ItemList items;
+            google::protobuf::util::JsonStringToMessage( res_text, &items );
+            std::cout << items.items_size() << std::endl;
+            std::u16string result = u"";
+            for ( int i = 0; i < items.items_size(); ++i ) {
+                auto item = items.items( i );
+                auto comma_added_price = []( int64_t price ) {
+                    std::string price_str = std::to_string( price );
+                    std::string result = "";
+                    int cnt = 0;
+                    for ( int i = price_str.length() - 1; i >= 0; --i ) {
+                        result = price_str[ i ] + result;
+                        if ( ++cnt == 3 && i != 0 ) {
+                            result = "," + result;
+                            cnt = 0;
+                        }
+                    }
+                    return result;
+                }( item.price() );
+                result += fmt::format( u"{}. {} : {}\n", i + 1, Util::UTF8toUTF16( item.name() ), Util::UTF8toUTF16( comma_added_price ) );
+            }
+            kakao_sendtext( chatroom_name, result );
+        } else {
+            kakao_sendtext( chatroom_name, u"현재 지원하지 않는 아이템입니다." );
+        }
+    }
     return RETURN_CODE::OK;
 }

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package item;
+
+message Item {
+    string name = 1;
+    int64 price = 2;
+}
+
+message ItemList{
+    repeated Item items = 1;
+}
