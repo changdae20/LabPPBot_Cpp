@@ -14,7 +14,6 @@
 #include <utility>
 #include <windows.h>
 
-
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 
