@@ -714,6 +714,58 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
     }
 
+    if ( msg == u"/볼포스목록2" ) { // 자신의 볼포스목록 조회
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        std::regex reg( "//" );
+        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+        http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        auto response = request.send( "GET" );
+        auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
+        auto bmp = Util::ConvertCVMatToBMP( frame );
+        if ( Util::PasteBMPToClipboard( bmp ) ) {
+            kakao_sendimage( chatroom_name );
+        }
+    } else if ( msg.rfind( u"/볼포스목록2 ", 0 ) == 0 ) {
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/볼포스목록2) ([\\S]+)" ) );
+        if ( !std::regex_match( u8msg, reg ) ) {
+            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록2 [이름]" );
+            return RETURN_CODE::OK;
+        }
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query_name = Util::UTF8toUTF16( *it );
+
+        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
+        auto account_response = account_request.send( "GET" );
+        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
+        if ( res_text == "{}" ) {
+            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+            return RETURN_CODE::OK;
+        }
+        reg = std::regex( "//" );
+        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
+        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
+
+        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+            auto response = request.send( "GET" );
+            auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
+            auto bmp = Util::ConvertCVMatToBMP( frame );
+            if ( Util::PasteBMPToClipboard( bmp ) ) {
+                kakao_sendimage( chatroom_name );
+            }
+        } else {
+            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 볼포스목록 조회 권한이 없습니다." );
+        }
+    }
+
     if ( msg == u"/서열표 18PUC" ) { // 자신의 18PUC 목록 조회
         http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
         auto account_response = account_request.send( "GET" );
