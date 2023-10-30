@@ -2257,7 +2257,7 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             if ( turtle.name == u"기댓값" ) {
                 result += fmt::format( u"<===== 기댓값 =====>\n" );
             } else {
-                result += fmt::format( u"{}. {} : {}/{}({:.1f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.turtle + turtle.zara, turtle.score * 100 );
+                result += fmt::format( u"{}. {} : {}/{}({:.2f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.turtle + turtle.zara, turtle.score * 100 );
                 prev_score = turtle.score;
             }
         }
