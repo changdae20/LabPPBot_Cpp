@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package message;
+
+message Message {
+    string room = 1;
+    string msg = 2;
+    string sender = 3;
+    bool isGroupChat = 4;
+}

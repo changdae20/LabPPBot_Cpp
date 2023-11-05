@@ -8,6 +8,8 @@ SET(LabPPBot_Cpp_SRC
     HTTPRequest.hpp
     utf8_core.h
     checked.h
+    message.h
+    message.cpp
 )
 
 add_subdirectory(protobuf)

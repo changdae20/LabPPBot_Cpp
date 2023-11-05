@@ -11,9 +11,10 @@
 #include <vector>
 
 #include "HTTPRequest.hpp"
+#include "message.h"
 #include "protobuf/config.pb.h"
 #include "util.h"
 
-void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &m, std::chrono::minutes &interval = std::chrono::minutes( 10 ) );
+void scheduler_boj( std::vector<Message> &message_queue, std::mutex &mq_mutex, std::chrono::minutes &interval = std::chrono::minutes( 10 ) );
 
 #endif // SCHEUDLER_H

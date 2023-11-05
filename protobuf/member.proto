@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package member;
+
+message Info {
+    int32 id = 1;
+    string name = 2;
+    string info_id = 3;
+    string info_pw = 4;
+    string info_svid = 5;
+    int32 permission = 6;
+}
+
+message Member {
+    int32 id = 1;
+    string name = 2;
+    string hash = 3;
+    string chatroom_name = 4;
+    string chatroom_hash = 5;
+    optional int32 info_id = 6;
+    optional Info info = 7;
+    string permission = 8;
+}
+
+message MemberList {
+    repeated Member members = 1;
+}

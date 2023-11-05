@@ -3,6 +3,6 @@ syntax = "proto3";
 package turtle;
 
 message ZaraData {
-    map<string, int64> dict = 1;
-    int32 age = 2;
+    map<int32, int64> dict = 1;
+    map<string, int32> age = 2;
 }

@@ -32,7 +32,8 @@ std::enable_if_t<is_specialization<T, std::vector>::value, T> ParseToVec( std::s
 int rand( int start, int end );
 HBITMAP ConvertCVMatToBMP( cv::Mat &frame, bool padding = false );
 bool PasteBMPToClipboard( void *bmp );
-std::string TOUTF8( std::string &multibyte_str );
+std::string TOUTF8( const std::string &multibyte_str );
+std::string FROMUTF8( const std::string &utf8_str );
 std::string URLEncode( const std::string &str );
 std::string URLEncode( const std::u16string &u16str );
 std::string UTF16toUTF8( const std::u16string &u16str );

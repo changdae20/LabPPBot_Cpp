@@ -148,7 +148,7 @@ bool PasteBMPToClipboard( void *bmp ) {
     }
 }
 
-std::string TOUTF8( std::string &multibyte_str ) {
+std::string TOUTF8( const std::string &multibyte_str ) {
     char *pszIn = new char[ multibyte_str.length() + 1 ];
     strncpy_s( pszIn, multibyte_str.length() + 1, multibyte_str.c_str(), multibyte_str.length() );
 
@@ -183,6 +183,42 @@ std::string TOUTF8( std::string &multibyte_str ) {
     resultString = pszOut;
 
     delete[] pszIn;
+    delete[] uni_wchar;
+    delete[] pszOut;
+
+    return resultString;
+}
+
+std::string FROMUTF8( const std::string &utf8_str ) {
+    int nLenOfUni = 0, nLenOfMB = 0;
+    wchar_t *uni_wchar = NULL;
+    char *pszOut = NULL;
+
+    // 1. UTF-8 Length
+    if ( ( nLenOfUni = MultiByteToWideChar( CP_UTF8, 0, utf8_str.c_str(), -1, NULL, 0 ) ) <= 0 )
+        return "";
+
+    uni_wchar = new wchar_t[ nLenOfUni + 1 ];
+    memset( uni_wchar, 0x00, sizeof( wchar_t ) * ( nLenOfUni + 1 ) );
+
+    // 2. UTF-8 ---> Unicode
+    nLenOfUni = MultiByteToWideChar( CP_UTF8, 0, utf8_str.c_str(), -1, uni_wchar, nLenOfUni );
+
+    // 3. ANSI(multibyte) Length
+    if ( ( nLenOfMB = WideCharToMultiByte( CP_ACP, 0, uni_wchar, -1, NULL, 0, NULL, NULL ) ) <= 0 ) {
+        delete[] uni_wchar;
+        return "";
+    }
+
+    pszOut = new char[ nLenOfMB + 1 ];
+    memset( pszOut, 0, sizeof( char ) * ( nLenOfMB + 1 ) );
+
+    // 4. Unicode ---> ANSI(multibyte)
+    nLenOfMB = WideCharToMultiByte( CP_ACP, 0, uni_wchar, -1, pszOut, nLenOfMB, NULL, NULL );
+    pszOut[ nLenOfMB ] = 0;
+
+    std::string resultString = pszOut;
+
     delete[] uni_wchar;
     delete[] pszOut;
 

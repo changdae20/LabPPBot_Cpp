@@ -1,5 +1,6 @@
 ﻿#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fmt/core.h>
 #include <fmt/xchar.h>
 #include <future>
@@ -13,100 +14,17 @@
 
 #include "HTTPRequest.hpp"
 #include "core.h"
+#include "message.h"
 #include "util.h"
 
 extern config::Config __config;
 
 // /갱신, >갱신에서 사용할 스레드
-extern std::vector<std::future<std::u16string>> renewal_threads;
+extern std::vector<std::future<std::pair<std::string, std::u16string>>> renewal_threads;
 
-std::u16string quiz_answer;
-std::vector<std::u16string> hint_request;
-
-void SendReturn( HWND hwnd ) {
-    PostMessage( hwnd, WM_KEYDOWN, VK_RETURN, 0 );
-    Sleep( 10 );
-    PostMessage( hwnd, WM_KEYUP, VK_RETURN, 0 );
-    return;
-}
-
-void kakao_sendtext( const std::string &chatroom_name, const std::u16string &text ) {
-    HWND hwnd = ::FindWindowA( NULL, reinterpret_cast<LPCSTR>( chatroom_name.c_str() ) );
-    if ( hwnd == nullptr ) {
-        std::cout << "Chatroom Not Opened!\n";
-    } else {
-        // std::cout << "Chatroom is Opened, hwnd : " << hwnd << "\n";
-        auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "RICHEDIT50W" ), NULL );
-        // std::cout << child_wnd << std::endl;
-        ::SendMessageW( child_wnd, WM_SETTEXT, 0, reinterpret_cast<LPARAM>( text.c_str() ) );
-        SendReturn( child_wnd );
-    }
-}
-
-void kakao_sendimage( const std::string &chatroom_name ) {
-    HWND hwnd = ::FindWindowA( NULL, reinterpret_cast<LPCSTR>( chatroom_name.c_str() ) );
-    if ( hwnd == nullptr ) {
-        std::cout << "Chatroom Not Opened!\n";
-    } else {
-        auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "EVA_VH_ListControl_Dblclk" ), NULL );
-        SetForegroundWindow( child_wnd );
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
-        PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        if ( GetForegroundWindow() == child_wnd ) {
-            PostKeyEx( child_wnd, static_cast<UINT>( 'V' ), VK_CONTROL, false );
-        }
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
-        SendReturn( GetForegroundWindow() );
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
-    }
-}
-
-void PostKeyEx( HWND &hwnd, UINT key, WPARAM shift, bool specialkey ) {
-    auto ThreadId = GetWindowThreadProcessId( hwnd, NULL );
-
-    LPARAM lparam = MAKELONG( 0, MapVirtualKeyA( key, 0 ) );
-    if ( specialkey ) {
-        lparam |= 0x1000000;
-    }
-
-    if ( shift != NULL ) {
-        BYTE pKeyBuffers[ 256 ];
-        BYTE pKeyBuffers_old[ 256 ];
-
-        SendMessage( hwnd, WM_ACTIVATE, WA_ACTIVE, 0 );
-        AttachThreadInput( GetCurrentThreadId(), ThreadId, true );
-        GetKeyboardState( pKeyBuffers_old );
-
-        if ( shift == VK_MENU ) {
-            lparam = lparam | 0x20000000;
-            pKeyBuffers[ shift ] |= 128;
-            SetKeyboardState( pKeyBuffers );
-            PostMessage( hwnd, WM_SYSKEYDOWN, key, lparam );
-            PostMessage( hwnd, WM_SYSKEYUP, key, lparam | 0xC0000000 );
-            SetKeyboardState( pKeyBuffers_old );
-            AttachThreadInput( GetCurrentThreadId(), ThreadId, false );
-        } else {
-            pKeyBuffers[ shift ] |= 128;
-            SetKeyboardState( pKeyBuffers );
-            Sleep( 50 );
-            PostMessage( hwnd, WM_KEYDOWN, key, lparam );
-            Sleep( 50 );
-            PostMessage( hwnd, WM_KEYUP, key, lparam | 0xC0000000 );
-            Sleep( 50 );
-            SetKeyboardState( pKeyBuffers_old );
-            Sleep( 50 );
-            AttachThreadInput( GetCurrentThreadId(), ThreadId, false );
-        }
-    } else {
-        SendMessage( hwnd, WM_KEYDOWN, key, lparam );
-        SendMessage( hwnd, WM_KEYUP, key, lparam | 0xC0000000 );
-    }
-    return;
-}
-
-void achievement_count( const std::u16string &name, int counter_id, int val ) {
+void achievement_count( std::vector<Message> &message_queue, std::mutex &mq_mutex, std::u16string name, int member_id, int counter_id, int val ) {
     http::Request request{ __config.api_endpoint() + "counter" };
-    const std::string body = fmt::format( "name={}&counter_id={}&counter_value={}", Util::URLEncode( name ), counter_id, val );
+    const std::string body = fmt::format( "member_id={}&counter_id={}&counter_value={}", member_id, counter_id, val );
     auto response = request.send( "POST", body, { { "Content-Type", "application/x-www-form-urlencoded" } } );
     db::AchievementList list;
     std::string res_text = std::string( response.body.begin(), response.body.end() );
@@ -115,7 +33,9 @@ void achievement_count( const std::u16string &name, int counter_id, int val ) {
 
     for ( const auto &achievement : list.achievements() ) {
         if ( achievement.type() == "normal" ) { // normal 업적의 경우 그냥 출력하면 됨
-            kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) ) );
+            mq_mutex.unlock();
         }
 
         if ( achievement.type() == "hidden" ) { // hidden 업적의 경우 달성 유저가 3명이상인 경우에만 설명 출력
@@ -131,215 +51,182 @@ void achievement_count( const std::u16string &name, int counter_id, int val ) {
             google::protobuf::util::JsonStringToMessage( replaced.c_str(), &info );
 
             if ( info.achievement_user_list_size() >= 3 ) {
-                kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( achievement.description() ) ) ) );
+                mq_mutex.unlock();
             } else {
                 auto replaced_description = std::regex_replace( achievement.description(), std::regex( "[^\\s]" ), "?" );
-                kakao_sendtext( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( replaced_description ) ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( __config.chatroom_name(), fmt::format( u"⭐{}님의 새로운 업적⭐\n[{}] {}\n***{}***", name, Util::UTF8toUTF16( achievement.tag() ), Util::UTF8toUTF16( achievement.name() ), Util::UTF8toUTF16( replaced_description ) ) ) );
+                mq_mutex.unlock();
             }
         }
     }
     return;
 }
-std::u16string GetClipboardText_Utf16() {
-    std::u16string strData;
 
-    if ( !OpenClipboard( NULL ) )
-        return std::u16string();
-
-    HANDLE hData = GetClipboardData( CF_UNICODETEXT );
-    if ( hData == nullptr )
-        return std::u16string();
-
-    char16_t *pszText = static_cast<char16_t *>( GlobalLock( hData ) );
-    if ( pszText == nullptr )
-        return std::u16string();
-
-    std::u16string text( pszText );
-    GlobalUnlock( hData );
-    CloseClipboard();
-
-    return text;
-}
-
-std::u16string copy_chatroom( const std::string &chatroom_name ) {
-    HWND hwnd = ::FindWindowA( NULL, reinterpret_cast<LPCSTR>( chatroom_name.c_str() ) );
-    auto child_wnd = ::FindWindowExA( hwnd, NULL, reinterpret_cast<LPCSTR>( "EVA_VH_ListControl_Dblclk" ), NULL );
-    if ( child_wnd == nullptr )
-        return std::u16string();
-    PostKeyEx( child_wnd, static_cast<UINT>( 'A' ), VK_CONTROL, false );
-    Sleep( 10 );
-    PostKeyEx( child_wnd, static_cast<UINT>( 'C' ), VK_CONTROL, false );
-    return GetClipboardText_Utf16();
-}
-
-std::pair<std::u16string, int> save_last_chat( const std::string &chatroom_name ) {
-    std::u16string chat_rawdata = copy_chatroom( chatroom_name );
-    auto splitted = Util::split( chat_rawdata, "\r\n" );
-
-    return std::pair( splitted.at( splitted.size() - 1 ), splitted.size() );
-}
-
-std::pair<std::u16string, int> loop( const std::string &chatroom_name, const std::u16string &last_chat, int last_idx ) {
-    std::cout << __LINE__ << " | " << ( *last_chat.c_str() ) << ", " << last_idx << std::endl;
-    std::u16string chat_rawdata = copy_chatroom( chatroom_name );
-    auto splitted = Util::split( chat_rawdata, "\r\n" );
-
-    std::regex chat_pattern( u8"\\[([\\S\\s]+)\\] \\[(오전|오후) ([0-9:\\s]+)\\] ([\\S\\s]+)" );
-    std::regex date_pattern( u8"[0-9]+년 [0-9]+월 [0-9]+일 (월|화|수|목|금|토|일)요일" );
-
-    if ( last_idx == splitted.size() ) { // 채팅이 없는 경우
-        std::cout << "채팅 없음...\n";
-        return std::pair( last_chat, last_idx );
-    } else if ( last_idx > splitted.size() ) { // 더 작아지면 잘못 동작한 경우로, 새로 로딩해야함
-        return std::pair( splitted.at( splitted.size() - 1 ), splitted.size() );
-    } else { // 채팅이 새로 있는 경우
-        splitted.erase( splitted.begin(), splitted.begin() + last_idx );
-        std::vector<int> indices{ 1, 2, 3, 4 };
-        for ( const auto &__line : splitted ) { // 새로운 채팅에 대해서 loop
-            auto line = Util::UTF16toUTF8( __line );
-            if ( !std::regex_match( line, chat_pattern ) )
-                continue;
-            std::sregex_token_iterator it( line.begin(), line.end(), chat_pattern, indices ), end;
-            std::vector<std::u16string> tokens;
-            for ( ; it != end; ++it )
-                tokens.push_back( Util::UTF8toUTF16( *it ) );
-            auto ret = execute_command( chatroom_name, tokens[ 0 ], tokens[ 1 ], tokens[ 2 ], tokens[ 3 ] );
-            if ( ret == RETURN_CODE::UPDATE )
-                return std::pair( u"Update", -12345 );
-            else if ( ret == RETURN_CODE::SONGUPDATE )
-                return std::pair( u"Song_Update", -12346 );
-            else if ( ret == RETURN_CODE::ERR ) {
-                return std::pair( u"Error", -24680 );
-            }
-        }
-        return std::pair( splitted.at( splitted.size() - 1 ), last_idx + splitted.size() );
-    }
-}
-
-RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16string &name, const std::u16string &AMPM, const std::u16string &time, const std::u16string &msg ) {
-    if ( name == u"EndTime" ) {
-        return RETURN_CODE::OK;
-    }
-
-    if ( Util::time_distance( AMPM, time ) >= 3 ) {
-        return RETURN_CODE::ERR;
-    }
-
-    if ( msg == u"/자라" ) {
-        if ( Util::rand( 1, 100 ) == 100 ) { // 1%
-            kakao_sendtext( chatroom_name, std::u16string( u"거북이" ) );
+std::pair<RETURN_CODE, std::string> loop( std::vector<Message> &message_queue, std::mutex &mq_mutex ) {
+    for ( const auto &entry : std::filesystem::directory_iterator( "message/data" ) ) {
+        std::string s;
+        message::Message m;
+        std::getline( std::ifstream( entry.path().string() ), s, '\0' );
+        google::protobuf::util::JsonStringToMessage( s, &m );
+        auto res = execute_command( message_queue, mq_mutex, Util::FROMUTF8( m.room() ), Util::UTF8toUTF16( m.sender() ), Util::UTF8toUTF16( m.msg() ), m.isgroupchat() );
+        if ( res != RETURN_CODE::OK ) {
+            std::remove( entry.path().string().c_str() );
+            return { res, Util::FROMUTF8( m.room() ) };
         } else {
-            kakao_sendtext( chatroom_name, std::u16string( u"자라" ) );
+            std::remove( entry.path().string().c_str() );
         }
-        return RETURN_CODE::OK;
+    }
+    return { RETURN_CODE::OK, "" };
+}
+
+std::pair<bool, member::Member> find_by_name( const std::u16string &name, const std::string &chatroom_name ) {
+    member::Member m;
+    http::Request req( fmt::format( "{}member/name?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) );
+    auto response = req.send( "GET" );
+    auto res_text = std::string( response.body.begin(), response.body.end() );
+    if ( res_text == "{}" ) {
+        return { false, m };
+    }
+    auto status = google::protobuf::util::JsonStringToMessage( res_text, &m );
+    if ( status.ok() ) {
+        return { true, m };
+    } else {
+        return { false, m };
+    }
+}
+
+std::pair<bool, member::Member> find_by_hash( const std::u16string &name, const std::string &chatroom_name ) {
+    member::Member m;
+    http::Request req( fmt::format( "{}member?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) );
+    auto response = req.send( "GET" );
+    auto res_text = std::string( response.body.begin(), response.body.end() );
+    if ( res_text == "{}" ) {
+        return { false, m };
+    }
+    auto status = google::protobuf::util::JsonStringToMessage( res_text, &m );
+    if ( status.ok() ) {
+        return { true, m };
+    } else {
+        return { false, m };
+    }
+}
+
+RETURN_CODE execute_command( std::vector<Message> &message_queue, std::mutex &mq_mutex, const std::string &chatroom_name, const std::u16string &_name, const std::u16string &msg, bool is_groupchat ) {
+    std::u16string name;
+    member::Member m;
+
+    // chatroom_name, name Resolving
+    {
+        auto [ found, _m ] = find_by_hash( _name, chatroom_name );
+        if ( !found ) {
+            return RETURN_CODE::OK;
+        }
+        m = std::move( _m );
+        name = Util::UTF8toUTF16( m.name() );
     }
 
-    if ( msg == u"/자라자라" ) {
-        if ( std::ifstream( "src/zara_data.json" ).fail() ) {
-            std::cout << "Fail!" << std::endl;
-            std::ofstream o( "src/zara_data.json" );
-            o << "{\"dict\":{}}";
+    // 단체방, 방 내부 공개 : /자라, /자라자라, /거북이, /인벤, /기린랭킹
+    {
+        if ( msg == u"/자라" ) {
+            if ( Util::rand( 1, 100 ) == 100 ) { // 1%
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, std::u16string( u"거북이" ) ) );
+                mq_mutex.unlock();
+            } else {
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, std::u16string( u"자라" ) ) );
+                mq_mutex.unlock();
+            }
+            return RETURN_CODE::OK;
         }
-        std::string json;
-        std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
-        turtle::ZaraData data;
-        google::protobuf::util::JsonStringToMessage( json, &data );
-
-        if ( ( data.dict().find( Util::UTF16toUTF8( name ) ) != data.dict().end() ) && ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] > std::time( NULL ) - 3600 * 5 ) { // 쿨이 안돈 경우
-            int sec = ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] + 3600 * 5 - std::time( NULL );
-            int hour = sec / 3600;
-            int min = ( sec % 3600 ) / 60;
-            sec %= 60;
-            kakao_sendtext( chatroom_name, fmt::format( u"아직 연속자라를 사용할 수 없습니다 : {}시간 {}분 {}초 남음", hour, min, sec ) );
-        } else {                                                                        // 쿨이 돈 경우
-            std::array<std::u16string, 5> arr;                                          // 5번 가챠 결과 담는 컨테이너
-            std::vector<int> ages;                                                      // 가챠 성공결과 담는 컨테이너
-            bool is_quiz = ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] == -1; // 퀴즈로 쿨초받은 경우 -1로 세팅되어있음.
-            for ( auto &el : arr ) {
-                if ( Util::rand( 1, 100 ) == 100 ) { // 1%
-                    el = u"거북이";
-                    ages.push_back( data.age() );
-                    data.set_age( 0 );
-                } else {
-                    data.set_age( data.age() + 1 );
-                    el = u"자라";
+        if ( is_groupchat && m.permission().length() > 0 && m.permission()[ 0 ] == '1' ) {
+            if ( msg == u"/자라자라" ) {
+                if ( std::ifstream( "src/zara_data.json" ).fail() ) {
+                    std::cout << "Fail!" << std::endl;
+                    std::ofstream o( "src/zara_data.json" );
+                    o << "{\"dict\":{}, \"age\":{}}";
                 }
+                std::string json;
+                std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
+                turtle::ZaraData data;
+                google::protobuf::util::JsonStringToMessage( json, &data );
+
+                if ( ( data.dict().find( m.id() ) != data.dict().end() ) && ( *data.mutable_dict() )[ m.id() ] > std::time( NULL ) - 3600 * 5 ) { // 쿨이 안돈 경우
+                    int sec = ( *data.mutable_dict() )[ m.id() ] + 3600 * 5 - std::time( NULL );
+                    int hour = sec / 3600;
+                    int min = ( sec % 3600 ) / 60;
+                    sec %= 60;
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, fmt::format( u"아직 연속자라를 사용할 수 없습니다 : {}시간 {}분 {}초 남음", hour, min, sec ) ) );
+                    mq_mutex.unlock();
+                } else {                                                     // 쿨이 돈 경우
+                    std::array<std::u16string, 5> arr;                       // 5번 가챠 결과 담는 컨테이너
+                    std::vector<int> ages;                                   // 가챠 성공결과 담는 컨테이너
+                    bool is_quiz = ( *data.mutable_dict() )[ m.id() ] == -1; // 퀴즈로 쿨초받은 경우 -1로 세팅되어있음.
+                    for ( auto &el : arr ) {
+                        if ( Util::rand( 1, 100 ) == 100 ) { // 1%
+                            el = u"거북이";
+                            ages.push_back( ( *data.mutable_age() )[ chatroom_name ] );
+                            ( *data.mutable_age() )[ chatroom_name ] = 0;
+                        } else {
+                            ( *data.mutable_age() )[ chatroom_name ] += 1;
+                            el = u"자라";
+                        }
+                    }
+
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, fmt::format( u"{}\n{}\n{}\n{}\n{}", arr[ 0 ], arr[ 1 ], arr[ 2 ], arr[ 3 ], arr[ 4 ] ) ) );
+                    mq_mutex.unlock();
+
+                    if ( ages.size() > 0 ) {                                              // 가챠로 먹은 경우
+                        if ( std::find( ages.begin(), ages.end(), 100 ) != ages.end() ) { // 정확하게 100살짜리를 먹은 경우
+                            achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 28, 1 );
+                        }
+                        auto [ min, max ] = std::minmax_element( ages.begin(), ages.end() );
+                        achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 7, *max );
+                        achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 8, *min );
+                        if ( ages.size() >= 2 ) { // 쌍거북 이상의 경우
+                            achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 7 + ages.size(), 1 );
+                        }
+                        if ( is_quiz ) { // 퀴즈 거북인 경우
+                            achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 3, ages.size() );
+                        } else { // normal case
+                            achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 1, ages.size() );
+                        }
+                    }
+
+                    achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 5, 1 );               // 쿨이 돈 연챠를 실행
+                    achievement_count( message_queue, mq_mutex, Util::UTF8toUTF16( m.name() ), m.id(), 6, 5 - ages.size() ); // 거북이 먹은 개수 추가
+                    ( *data.mutable_dict() )[ m.id() ] = std::time( NULL );
+                    json.clear();
+                    google::protobuf::util::MessageToJsonString( data, &json );
+                    std::ofstream o( "src/zara_data.json" );
+                    o << json;
+                }
+
+                return RETURN_CODE::OK;
             }
 
-            kakao_sendtext( chatroom_name, fmt::format( u"{}\n{}\n{}\n{}\n{}", arr[ 0 ], arr[ 1 ], arr[ 2 ], arr[ 3 ], arr[ 4 ] ) );
+            if ( msg == u"/거북이" ) {
+                if ( std::ifstream( "src/zara_data.json" ).fail() ) { // 저장 파일 못찾은 경우
+                    int zara_count = 0;
+                }
+                std::string json;
+                std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
+                turtle::ZaraData data;
+                google::protobuf::util::JsonStringToMessage( json, &data );
 
-            if ( ages.size() > 0 ) {                                              // 가챠로 먹은 경우
-                if ( std::find( ages.begin(), ages.end(), 100 ) != ages.end() ) { // 정확하게 100살짜리를 먹은 경우
-                    achievement_count( name, 28, 1 );
-                }
-                auto [ min, max ] = std::minmax_element( ages.begin(), ages.end() );
-                achievement_count( name, 7, *max );
-                achievement_count( name, 8, *min );
-                if ( ages.size() >= 2 ) { // 쌍거북 이상의 경우
-                    achievement_count( name, 7 + ages.size(), 1 );
-                }
-                if ( is_quiz ) { // 퀴즈 거북인 경우
-                    achievement_count( name, 3, ages.size() );
-                } else { // normal case
-                    achievement_count( name, 1, ages.size() );
-                }
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"현재 거북이 이후 {}연속 자라입니다.", ( *data.mutable_age() )[ chatroom_name ] ) ) );
+                mq_mutex.unlock();
             }
-
-            achievement_count( name, 5, 1 );               // 쿨이 돈 연챠를 실행
-            achievement_count( name, 6, 5 - ages.size() ); // 거북이 먹은 개수 추가
-            ( *data.mutable_dict() )[ Util::UTF16toUTF8( name ) ] = std::time( NULL );
-            json.clear();
-            google::protobuf::util::MessageToJsonString( data, &json );
-            std::ofstream o( "src/zara_data.json" );
-            o << json;
-        }
-
-        return RETURN_CODE::OK;
-    }
-
-    if ( msg == u"/거북이" ) {
-        if ( std::ifstream( "src/zara_data.json" ).fail() ) { // 저장 파일 못찾은 경우
-            int zara_count = 0;
-        }
-        std::string json;
-        std::getline( std::ifstream( "src/zara_data.json" ), json, '\0' );
-        turtle::ZaraData data;
-        google::protobuf::util::JsonStringToMessage( json, &data );
-
-        kakao_sendtext( chatroom_name, fmt::format( u"현재 거북이 이후 {}연속 자라입니다.", data.age() ) );
-    }
-    if ( msg == u"/인벤" || msg == u"/인벤토리" ) { // 자신의 인벤
-        http::Request request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
-        auto response = request.send( "GET" );
-        auto res_text = std::string( response.body.begin(), response.body.end() );
-        std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
-        std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
-        std::vector<std::u16string> tokens;
-        for ( ; it != end; ++it )
-            tokens.push_back( Util::UTF8toUTF16( *it ) );
-
-        tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
-        tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
-
-        kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
-    } else if ( msg.rfind( u"/인벤 ", 0 ) == 0 || msg.rfind( u"/인벤토리 ", 0 ) == 0 ) { // 타인의 인벤
-        auto u8msg = Util::UTF16toUTF8( msg );
-        std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
-        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
-        auto query_name = Util::UTF8toUTF16( *it );
-
-        http::Request request{ __config.api_endpoint() + "member?chatroom_name=" + Util::URLEncode( chatroom_name ) };
-        auto response = request.send( "GET" );
-        std::string res_text = std::string( response.body.begin(), response.body.end() );
-        if ( res_text == "[]" ) { // DB에 해당 단체방에 대한 정보가 없음
-            kakao_sendtext( chatroom_name, u"지원하지 않는 단체방입니다." );
-        } else {
-            auto splitted = Util::split( Util::UTF8toUTF16( std::string( res_text.begin() + 1, res_text.end() - 1 ) ), "," );
-            if ( std::find( splitted.begin(), splitted.end(), fmt::format( u"\"{}\"", query_name ) ) != splitted.end() ) { // 멤버를 찾음
-                request = http::Request( fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( query_name ) ) );
-                response = request.send( "GET" );
-                res_text = std::string( response.body.begin(), response.body.end() );
+            if ( msg == u"/인벤" || msg == u"/인벤토리" ) { // 자신의 인벤
+                http::Request request{ fmt::format( "{}counter/inventory?member_id={}", __config.api_endpoint(), m.id() ) };
+                auto response = request.send( "GET" );
+                auto res_text = std::string( response.body.begin(), response.body.end() );
                 std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
                 std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
                 std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
@@ -350,9 +237,110 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
                 tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
 
-                kakao_sendtext( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", query_name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) );
-            } else {
-                kakao_sendtext( chatroom_name, u"단체방 멤버를 찾을 수 없습니다." );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) ) );
+                mq_mutex.unlock();
+            } else if ( msg.rfind( u"/인벤 ", 0 ) == 0 || msg.rfind( u"/인벤토리 ", 0 ) == 0 ) { // 타인의 인벤
+                auto u8msg = Util::UTF16toUTF8( msg );
+                std::regex reg( Util::UTF16toUTF8( u"(/인벤|/인벤토리) ([\\s\\S]+)" ) );
+                std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+                auto query_name = Util::UTF8toUTF16( *it );
+
+                auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+                if ( !found ) {
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, u"정보를 찾을 수 없습니다." ) );
+                    mq_mutex.unlock();
+                } else {
+                    auto request = http::Request( fmt::format( "{}counter/inventory?member_id={}", __config.api_endpoint(), query_m.id() ) );
+                    auto response = request.send( "GET" );
+                    auto res_text = std::string( response.body.begin(), response.body.end() );
+                    std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
+                    std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
+                    std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
+                    std::vector<std::u16string> tokens;
+                    for ( ; it != end; ++it )
+                        tokens.push_back( Util::UTF8toUTF16( *it ) );
+
+                    tokens[ 4 ] = tokens[ 4 ] != u"0" ? tokens[ 4 ] : u"데이터 없음";
+                    tokens[ 5 ] = tokens[ 5 ] != u"-10000" ? Util::UTF8toUTF16( std::to_string( -std::stoi( Util::UTF16toUTF8( tokens[ 5 ] ) ) ) ) : u"데이터 없음";
+
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, fmt::format( u"<<{}님의 인벤토리>>\n\n거북이 : {}\n자라 : {}\n\n최고령 거북이 : {}\n최연소 거북이 : {}", query_name, tokens[ 0 ], tokens[ 3 ], tokens[ 4 ], tokens[ 5 ] ) ) );
+                    mq_mutex.unlock();
+                }
+            }
+            if ( msg == u"/기린랭킹" ) {
+                http::Request members_request{ fmt::format( "{}member/list?chatroom_name={}", __config.api_endpoint(), Util::URLEncode( chatroom_name ) ) };
+                auto members_response = members_request.send( "GET" );
+                auto res_text = std::string( members_response.body.begin(), members_response.body.end() );
+                res_text = std::string( "{\"members\":" ) + res_text + "}";
+                member::MemberList member_list;
+                google::protobuf::util::JsonStringToMessage( res_text, &member_list );
+
+                if ( member_list.members_size() == 0 ) {
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, u"정보를 불러올 수 없습니다." ) );
+                    mq_mutex.unlock();
+                    return RETURN_CODE::OK;
+                }
+
+                class Turtle {
+                public:
+                    Turtle( std::u16string name, int turtle, int zara ) : name( name ), zara( zara ), turtle( turtle ), score( ( turtle + zara ) == 0 ? 0.0 : ( static_cast<float>( turtle ) / ( turtle + zara ) ) ) {}
+                    bool operator>( const Turtle &t ) const {
+                        if ( score == t.score ) {
+                            if ( turtle == t.turtle ) {
+                                return zara < t.zara;
+                            }
+                            return turtle > t.turtle;
+                        }
+                        return score > t.score;
+                    }
+
+                    std::u16string name;
+                    int zara;
+                    int turtle;
+                    float score;
+                };
+
+                std::vector<Turtle> turtle_data;
+
+                auto insert_zero_width_space = []( std::u16string str ) {
+                    return std::accumulate( str.begin(), str.end(), std::u16string(), []( std::u16string a, char16_t b ) {
+                        return a + u"\u200B" + b;
+                    } );
+                };
+
+                for ( auto &member : member_list.members() ) {
+                    http::Request data_request{ fmt::format( "{}counter/inventory?member_id={}", __config.api_endpoint(), member.id() ) };
+                    auto data_response = data_request.send( "GET" );
+                    res_text = std::string( data_response.body.begin(), data_response.body.end() );
+                    std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
+                    std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
+                    std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
+                    std::vector<int> tokens;
+                    for ( ; it != end; ++it )
+                        tokens.push_back( std::stoi( *it ) );
+                    turtle_data.push_back( Turtle( insert_zero_width_space( Util::UTF8toUTF16( member.name() ) ), tokens[ 0 ], tokens[ 3 ] ) );
+                }
+                turtle_data.push_back( Turtle( u"기댓값", 1, 99 ) );
+                std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
+
+                std::u16string result = u"🦒기린랭킹🦒\n";
+                int rank = 0;
+                float prev_score = -1;
+                for ( auto &turtle : turtle_data ) {
+                    if ( turtle.name == u"기댓값" ) {
+                        result += fmt::format( u"<===== 기댓값 =====>\n" );
+                    } else {
+                        result += fmt::format( u"{}. {} : {}/{}({:.2f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.turtle + turtle.zara, turtle.score * 100 );
+                        prev_score = turtle.score;
+                    }
+                }
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, result.substr( 0, result.length() - 1 ) ) );
+                mq_mutex.unlock();
             }
         }
     }
@@ -369,7 +357,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
         if ( res_text == "{}" ) { // 검색 결과가 없는 경우
-            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             // TODO : 검색통해서 ~~~를 찾으시나요? 출력
         } else {
             std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
@@ -378,26 +368,28 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             replaced = std::regex_replace( res_text, std::regex( "table_PUC" ), "tablePUC" );
             db::SdvxSong song;
             google::protobuf::util::JsonStringToMessage( replaced.c_str(), &song );
-            kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
-                                               u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
-                                               u"\n작곡가 : " + Util::UTF8toUTF16( song.artist() ) +
-                                               u"\n이펙터 : " + Util::UTF8toUTF16( song.effector() ) +
-                                               u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
-                                               u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
-                                               u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) +
-                                               ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) );
-
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
+                                                                 u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
+                                                                 u"\n작곡가 : " + Util::UTF8toUTF16( song.artist() ) +
+                                                                 u"\n이펙터 : " + Util::UTF8toUTF16( song.effector() ) +
+                                                                 u"\n일러스트레이터 : " + Util::UTF8toUTF16( song.illustrator() ) +
+                                                                 u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
+                                                                 u"\n체인수 : " + Util::UTF8toUTF16( std::to_string( song.chain_vi() ) ) +
+                                                                 ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) ) );
+            mq_mutex.unlock();
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
 
             try {
                 auto frame = cv::imread( fmt::format( "songs/{}/jacket.png", lower_code ), cv::IMREAD_UNCHANGED );
-                auto bmp = Util::ConvertCVMatToBMP( frame );
-                if ( Util::PasteBMPToClipboard( bmp ) ) {
-                    kakao_sendimage( chatroom_name );
-                }
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, frame ) );
+                mq_mutex.unlock();
             } catch ( cv::Exception &e ) {
-                kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) ) );
+                mq_mutex.unlock();
             }
         }
     }
@@ -414,7 +406,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
         if ( res_text == "{}" ) { // 검색 결과가 없는 경우
-            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             // TODO : 검색통해서 ~~~를 찾으시나요? 출력
         } else {
             std::string replaced = std::regex_replace( res_text, std::regex( "chain_vi" ), "chainVi" );
@@ -429,12 +423,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
             try {
                 auto frame = cv::imread( fmt::format( "songs/{}/chart.png", lower_code ), cv::IMREAD_UNCHANGED );
-                auto bmp = Util::ConvertCVMatToBMP( frame );
-                if ( Util::PasteBMPToClipboard( bmp ) ) {
-                    kakao_sendimage( chatroom_name );
-                }
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, frame ) );
+                mq_mutex.unlock();
             } catch ( cv::Exception &e ) {
-                kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"채보파일을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) ) );
+                mq_mutex.unlock();
             }
         }
     }
@@ -468,24 +463,17 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = u"";
 
             // 혹시 (/점수조회 곡명)인지 확인하기 위해 query_name이 진짜 DB에 있는지 확인
-            http::Request request{ __config.api_endpoint() + "member?chatroom_name=" + Util::URLEncode( chatroom_name ) };
-            auto response = request.send( "GET" );
-            std::string res_text = std::string( response.body.begin(), response.body.end() );
-            if ( res_text == "[]" ) { // DB에 해당 단체방에 대한 정보가 없음
-                kakao_sendtext( chatroom_name, u"지원하지 않는 단체방입니다." );
-            } else {
-                auto splitted = Util::split( Util::UTF8toUTF16( std::string( res_text.begin() + 1, res_text.end() - 1 ) ), "," );
-                if ( std::find( splitted.begin(), splitted.end(), fmt::format( u"\"{}\"", query_name ) ) != splitted.end() ) { // 멤버를 찾음
-                    http::Request title_request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( nick ) };
-                    title_response = title_request.send( "GET" );
-                } else { // 멤버 없는 경우 /점수조회 곡명 명령어를 띄어쓰기 포함하여 사용한 경우.
-                    query_name = name;
-                    reg = std::regex( u8"(/점수조회) ([\\s\\S]+)" );
-                    std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
-                    auto nick = Util::UTF8toUTF16( *( it ) );
-                    http::Request title_request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( nick ) };
-                    title_response = title_request.send( "GET" );
-                }
+            auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+            if ( found ) {
+                http::Request title_request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( nick ) };
+                title_response = title_request.send( "GET" );
+            } else { // 멤버 없는 경우 /점수조회 곡명 명령어를 띄어쓰기 포함하여 사용한 경우.
+                query_name = name;
+                reg = std::regex( u8"(/점수조회) ([\\s\\S]+)" );
+                std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+                auto nick = Util::UTF8toUTF16( *( it ) );
+                http::Request title_request{ __config.api_endpoint() + "songs?title=" + Util::URLEncode( nick ) };
+                title_response = title_request.send( "GET" );
             }
         } else if ( std::regex_match( u8msg, std::regex( u8"(/점수조회) ([\\s\\S]+)" ) ) ) { // /점수조회 곡명
             std::regex reg( u8"(/점수조회) ([\\s\\S]+)" );
@@ -500,7 +488,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
 
         if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾지 못했습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
             // TODO : 검색으로 ~를 찾으시나요? 출력
         }
@@ -514,27 +504,27 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = Util::UTF8toUTF16( std::to_string( song.level() ) );
         }
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
 
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}info?id={}&pw={}&title={}&level={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ), Util::URLEncode( song.title() ), Util::URLEncode( level ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info?id={}&pw={}&title={}&level={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ), Util::URLEncode( song.title() ), Util::URLEncode( level ) ) };
             auto response = request.send( "GET" );
             res_text = std::string( response.body.begin(), response.body.end() );
+            std::regex reg( "//" );
             std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
             score = Util::UTF8toUTF16( *( it++ ) );
             clear_lamp = Util::UTF8toUTF16( *it );
 
             if ( score == u"-1" && clear_lamp == u"NP" ) { // Not Played
-                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : ❌NP❌", query_name ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"{}님의 점수 : ❌NP❌", query_name ) ) );
+                mq_mutex.unlock();
                 return RETURN_CODE::OK;
             } else {
                 if ( clear_lamp == u"play" ) {
@@ -548,16 +538,22 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 } else if ( clear_lamp == u"puc" ) {
                     clear_lamp = u"💯PUC💯";
                 }
-                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : {} {}", query_name, score, clear_lamp ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"{}님의 점수 : {} {}", query_name, score, clear_lamp ) ) );
+                mq_mutex.unlock();
             }
         } else {
-            kakao_sendtext( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/갱신" || msg.rfind( u"/갱신 ", 0 ) == 0 ) { // 23.01.05 자신/타인 갱신 분기 하나로 합침
         if ( renewal_threads.size() >= 1 ) {                   // 동시에 진행되는 갱신은 1개로 제한, 2개 이상은 아직 테스트 안해봄, AWS인스턴스 비싼거 쓰면 충분히 가능할듯
-            kakao_sendtext( chatroom_name, u"갱신이 진행중입니다. 잠시 후 다시 시도해주세요." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"갱신이 진행중입니다. 잠시 후 다시 시도해주세요." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::u16string query_name;
@@ -565,7 +561,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             auto u8msg = Util::UTF16toUTF8( msg );
             std::regex reg( Util::UTF16toUTF8( u"(/갱신) ([\\S]+)" ) );
             if ( !std::regex_match( u8msg, reg ) ) {
-                kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /갱신 [이름]" );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /갱신 [이름]" ) );
+                mq_mutex.unlock();
                 return RETURN_CODE::OK;
             } else {
                 std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
@@ -574,212 +572,201 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         } else if ( msg == u"/갱신" ) {
             query_name = name;
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /갱신 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /갱신 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"갱신을 시작합니다." ) );
+        mq_mutex.unlock();
         renewal_threads.push_back( std::async(
-            std::launch::async, []( std::string api_endpoint, std::string info_svid, std::string info_id, std::string info_pw ) -> std::u16string {
+            std::launch::async, []( std::string api_endpoint, std::string info_svid, std::string info_id, std::string info_pw, std::string chatroom_name ) -> std::pair<std::string, std::u16string> {
                 http::Request renewal_request{ fmt::format( "{}renewal?svid={}&id={}&pw={}", api_endpoint, Util::URLEncode( info_svid ), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
                 auto renewal_response = renewal_request.send( "GET" );
                 auto res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
 
                 if ( res_text == "-1" ) {
-                    return u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요.";
+                    return { chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." };
                 } else {
-                    return fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) );
+                    return { chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) };
                 }
             },
-            __config.api_endpoint(), info_svid, info_id, info_pw ) );
+            __config.api_endpoint(), query_m.info().info_svid(), query_m.info().info_id(), query_m.info().info_pw(), chatroom_name ) );
     }
 
     if ( msg == u"/인포" ) { // 자신의 인포 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto info_response = info_request.send( "GET" );
-        res_text = std::string( info_response.body.begin(), info_response.body.end() );
+        auto res_text = std::string( info_response.body.begin(), info_response.body.end() );
         auto info_token = Util::split( Util::UTF8toUTF16( res_text ), "//" );
 
         if ( info_token.size() == 6 ) {
-            kakao_sendtext( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." ) );
+            mq_mutex.unlock();
         }
     } else if ( msg.rfind( u"/인포 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/인포) ([\\S]+)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /인포 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /인포 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request info_request{ fmt::format( "{}info/info?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto info_response = info_request.send( "GET" );
-            res_text = std::string( info_response.body.begin(), info_response.body.end() );
+            auto res_text = std::string( info_response.body.begin(), info_response.body.end() );
             auto info_token = Util::split( Util::UTF8toUTF16( res_text ), "//" );
 
             if ( info_token.size() == 6 ) {
-                kakao_sendtext( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", query_name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"<---{}님의 인포--->\n닉네임 : {}\n단 : {}단\n볼포스 : {}\n코인수 : {}\n최근 갱신 일자 : {}", query_name, info_token[ 1 ], info_token[ 2 ], info_token[ 3 ], info_token[ 4 ] == u"0" ? u"비공개" : info_token[ 4 ], info_token[ 5 ] ) ) );
+                mq_mutex.unlock();
             } else {
-                kakao_sendtext( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"인포 계정정보를 찾았지만 인포를 불러오지 못했습니다." ) );
+                mq_mutex.unlock();
             }
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 인포 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 인포 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/볼포스목록" ) { // 자신의 볼포스목록 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request request{ fmt::format( "{}info/volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request request{ fmt::format( "{}info/volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto response = request.send( "GET" );
         auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        auto bmp = Util::ConvertCVMatToBMP( frame );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, frame ) );
+        mq_mutex.unlock();
     } else if ( msg.rfind( u"/볼포스목록 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/볼포스목록) ([\\S]+)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}info/volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto response = request.send( "GET" );
             auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 볼포스목록 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 볼포스목록 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/볼포스목록2" ) { // 자신의 볼포스목록 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto response = request.send( "GET" );
         auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        auto bmp = Util::ConvertCVMatToBMP( frame );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, frame ) );
+        mq_mutex.unlock();
     } else if ( msg.rfind( u"/볼포스목록2 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/볼포스목록2) ([\\S]+)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록2 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /볼포스목록2 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/new_volforce_list?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto response = request.send( "GET" );
             auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 볼포스목록 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 볼포스목록 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/서열표 18PUC" ) { // 자신의 18PUC 목록 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request request{ fmt::format( "{}table?level=18&query=PUC&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request request{ fmt::format( "{}table?level=18&query=PUC&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto response = request.send( "GET" );
-        res_text = std::string( response.body.begin(), response.body.end() );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
         std::vector<std::string> codes;
         if ( res_text != "[]" ) {
             std::regex re( "," );
@@ -936,31 +923,26 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
         cv::Mat resized_table;
         cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
-        auto bmp = Util::ConvertCVMatToBMP( resized_table );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, resized_table ) );
+        mq_mutex.unlock();
 
     } else if ( auto u8msg = Util::UTF16toUTF8( msg ); std::regex_match( u8msg, std::regex( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (18PUC)" ) ) ) ) {
         std::regex reg( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (18PUC)" ) );
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}table?level=18&query=PUC&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}table?level=18&query=PUC&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto response = request.send( "GET" );
-            res_text = std::string( response.body.begin(), response.body.end() );
+            auto res_text = std::string( response.body.begin(), response.body.end() );
             std::vector<std::string> codes;
             if ( res_text != "[]" ) {
                 std::regex re( "," );
@@ -1117,29 +1099,26 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
             cv::Mat resized_table;
             cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
-            auto bmp = Util::ConvertCVMatToBMP( resized_table );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, resized_table ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 서열표 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 서열표 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/서열표 19S" ) { // 자신의 19S 목록 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto response = request.send( "GET" );
-        res_text = std::string( response.body.begin(), response.body.end() );
+        auto res_text = std::string( response.body.begin(), response.body.end() );
         std::vector<std::string> codes;
         if ( res_text != "[]" ) {
             std::regex re( "," );
@@ -1288,31 +1267,26 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
         cv::Mat resized_table;
         cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
-        auto bmp = Util::ConvertCVMatToBMP( resized_table );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, resized_table ) );
+        mq_mutex.unlock();
 
     } else if ( auto u8msg = Util::UTF16toUTF8( msg ); std::regex_match( u8msg, std::regex( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (19S)" ) ) ) ) {
         std::regex reg( Util::UTF16toUTF8( u"(/서열표) ([\\S]+) (19S)" ) );
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}table?level=19&query=S&id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto response = request.send( "GET" );
-            res_text = std::string( response.body.begin(), response.body.end() );
+            auto res_text = std::string( response.body.begin(), response.body.end() );
             std::vector<std::string> codes;
             if ( res_text != "[]" ) {
                 std::regex re( "," );
@@ -1461,64 +1435,59 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
             cv::Mat resized_table;
             cv::resize( table, resized_table, cv::Size(), 0.5, 0.5 );
-            auto bmp = Util::ConvertCVMatToBMP( resized_table );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, resized_table ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 서열표 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 서열표 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/평균" ) { // 자신의 평균목록 조회
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-        http::Request request{ fmt::format( "{}info/average?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        http::Request request{ fmt::format( "{}info/average?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( m.info().info_id() ), Util::URLEncode( m.info().info_pw() ) ) };
         auto response = request.send( "GET" );
         auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        auto bmp = Util::ConvertCVMatToBMP( frame );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, frame ) );
+        mq_mutex.unlock();
     } else if ( msg.rfind( u"/평균 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(/평균) ([\\S]+)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /평균 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /평균 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}info/average?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/average?id={}&pw={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ) ) };
             auto response = request.send( "GET" );
             auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 평균 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 평균 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1538,39 +1507,42 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = Util::UTF8toUTF16( *it );
             std::cout << "LEVEL : " << ( *it ) << std::endl;
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /통계 {이름} [레벨]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /통계 {이름} [레벨]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        auto it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}info/statistics?id={}&pw={}&level={}", __config.api_endpoint(), Util::URLEncode( info_id ), Util::URLEncode( info_pw ), Util::URLEncode( level ) ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}info/statistics?id={}&pw={}&level={}", __config.api_endpoint(), Util::URLEncode( query_m.info().info_id() ), Util::URLEncode( query_m.info().info_pw() ), Util::URLEncode( level ) ) };
             auto response = request.send( "GET" );
             auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 통계 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 통계 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
     if ( msg == u"/업데이트" && name == u"손창대" ) {
-        kakao_sendtext( chatroom_name, u"업데이트를 진행합니다." );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"업데이트를 진행합니다." ) );
+        mq_mutex.unlock();
         return RETURN_CODE::UPDATE;
     } else if ( msg == u"/악곡업데이트" && name == u"손창대" ) {
-        kakao_sendtext( chatroom_name, u"악곡업데이트를 진행합니다." );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"악곡업데이트를 진행합니다." ) );
+        mq_mutex.unlock();
         return RETURN_CODE::SONGUPDATE;
     }
 
@@ -1585,9 +1557,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
 
         if ( res_text == "Error" ) { // 해당하는 링크를 찾지 못한 경우
-            kakao_sendtext( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" ) );
+            mq_mutex.unlock();
         } else { // 해당 링크를 찾은 경우
-            kakao_sendtext( chatroom_name, Util::UTF8toUTF16( res_text ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, Util::UTF8toUTF16( res_text ) ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1602,25 +1578,30 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::string res_text = std::string( response.body.begin(), response.body.end() );
 
         if ( res_text == "Error" ) { // 해당하는 링크를 찾지 못한 경우
-            kakao_sendtext( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"라이브 스트리밍중이 아니거나 지원하는 스트리밍이 아닙니다.\n\n<<사용가능 목록>>\n\n관성(개인방송)\n릿샤(개인방송)\n싸이발키리\n싸이구기체\n싸이라이트닝\n싸이투덱\n량진발키리\n량진구기체" ) );
+            mq_mutex.unlock();
         } else { // 해당 링크를 찾은 경우
             request = http::Request( __config.api_endpoint() + "streaming/playback?url=" + Util::URLEncode( res_text ) );
             response = request.send( "GET" );
             res_text = std::string( response.body.begin(), response.body.end() );
 
             if ( res_text == "Error" ) {
-                kakao_sendtext( chatroom_name, u"라이브 스트리밍을 찾았지만, 플레이백 URL을 구하는 과정에서 에러가 발생했습니다." );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"라이브 스트리밍을 찾았지만, 플레이백 URL을 구하는 과정에서 에러가 발생했습니다." ) );
+                mq_mutex.unlock();
             } else {
                 auto capture = cv::VideoCapture( res_text );
                 cv::Mat frame;
                 auto grabbed = capture.read( frame );
                 if ( grabbed ) { // 캡쳐에 성공한 경우
-                    auto bmp = Util::ConvertCVMatToBMP( frame );
-                    if ( Util::PasteBMPToClipboard( bmp ) ) {
-                        kakao_sendimage( chatroom_name );
-                    }
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, frame ) );
+                    mq_mutex.unlock();
                 } else { // playback은 있었지만 캡쳐에 실패한 경우
-                    kakao_sendtext( chatroom_name, u"라이브 스트리밍을 찾았지만, 오류가 발생하여 썸네일을 생성하지 못했습니다." );
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( chatroom_name, u"라이브 스트리밍을 찾았지만, 오류가 발생하여 썸네일을 생성하지 못했습니다." ) );
+                    mq_mutex.unlock();
                 }
             }
         }
@@ -1630,24 +1611,27 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         http::Request request{ __config.api_endpoint() + "etc/baseball" };
         auto response = request.send( "GET" );
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
-        kakao_sendtext( chatroom_name, Util::UTF8toUTF16( res_text ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, Util::UTF8toUTF16( res_text ) ) );
+        mq_mutex.unlock();
     }
 
     if ( msg == u"/국내야구랭킹" || msg == u"/국야랭" ) {
         http::Request request{ fmt::format( "{}etc/baseball_ranking", __config.api_endpoint() ) };
         auto response = request.send( "GET" );
         auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        auto bmp = Util::ConvertCVMatToBMP( frame );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, frame ) );
+        mq_mutex.unlock();
     }
 
     if ( msg.rfind( u"/", 0 ) == 0 && msg.find( u"vs" ) != std::u16string::npos ) {
         auto tokens = Util::split( msg.substr( 1 ), "vs" );
         auto selected = tokens.at( Util::rand( 0, tokens.size() - 1 ) );
         std::regex reg( "\\s" );
-        kakao_sendtext( chatroom_name, Util::UTF8toUTF16( std::regex_replace( Util::UTF16toUTF8( selected ), reg, "" ) ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, Util::UTF8toUTF16( std::regex_replace( Util::UTF16toUTF8( selected ), reg, "" ) ) ) );
+        mq_mutex.unlock();
     }
 
     if ( msg.rfind( u"/장비 ", 0 ) == 0 ) {
@@ -1662,16 +1646,19 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             http::Request title_request{ __config.api_endpoint() + "maple?nick=" + Util::URLEncode( nick ) + "&kind=" + Util::URLEncode( kind ) };
             image_response = title_request.send( "GET" );
             if ( std::string( image_response.body.begin(), image_response.body.end() ) == "ERROR" ) {
-                kakao_sendtext( chatroom_name, u"장비를 조회하는 도중에 에러가 발생했습니다. 장비정보가 공개되어있는지 메이플스토리 공식홈페이지에서 한번 더 확인해주세요." );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"장비를 조회하는 도중에 에러가 발생했습니다. 장비정보가 공개되어있는지 메이플스토리 공식홈페이지에서 한번 더 확인해주세요." ) );
+                mq_mutex.unlock();
             } else {
                 auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( image_response.body.data() ), static_cast<std::streamsize>( image_response.body.size() ) ), cv::IMREAD_UNCHANGED );
-                auto bmp = Util::ConvertCVMatToBMP( frame, true );
-                if ( Util::PasteBMPToClipboard( bmp ) ) {
-                    kakao_sendimage( chatroom_name );
-                }
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, frame ) );
+                mq_mutex.unlock();
             }
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /장비 [닉네임] [부위]\n조회 가능한 장비분류 : 반지1, 모자, 뚝, 뚝배기, 엠블렘, 엠블럼, 엠블, 반지2, 펜던트2, 펜던2, 얼굴장식, 얼장, 뱃지, 반지3, 펜던트1, 펜던트, 펜던, 눈장식, 눈장, 귀고리, 귀걸이, 이어링, 훈장, 메달, 반지4, 무기, 상의, 견장, 어깨장식, 보조, 보조무기, 포켓, 포켓아이템, 벨트, 하의, 장갑, 망토, 신발, 하트, 기계심장" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /장비 [닉네임] [부위]\n조회 가능한 장비분류 : 반지1, 모자, 뚝, 뚝배기, 엠블렘, 엠블럼, 엠블, 반지2, 펜던트2, 펜던2, 얼굴장식, 얼장, 뱃지, 반지3, 펜던트1, 펜던트, 펜던, 눈장식, 눈장, 귀고리, 귀걸이, 이어링, 훈장, 메달, 반지4, 무기, 상의, 견장, 어깨장식, 보조, 보조무기, 포켓, 포켓아이템, 벨트, 하의, 장갑, 망토, 신발, 하트, 기계심장" ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1679,14 +1666,18 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         auto search_text = msg.substr( 4 );
 
         if ( search_text.length() == 0 ) {
-            kakao_sendtext( chatroom_name, u"검색어를 입력해주세요" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"검색어를 입력해주세요" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
 
         auto regex = std::regex( "^\\S$|^\\S.*\\S$" );
         auto u8str = Util::UTF16toUTF8( search_text );
         if ( !std::regex_match( u8str, regex ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /검색 [검색어]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /검색 [검색어]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         http::Request request{ __config.api_endpoint() + "songs/search?search_text=" + Util::URLEncode( search_text ) };
@@ -1704,7 +1695,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         google::protobuf::util::JsonStringToMessage( replaced, &result );
 
         if ( result.result_size() == 0 ) {
-            kakao_sendtext( chatroom_name, fmt::format( u"검색어 \"{}\"에 대한 결과를 찾을 수 없습니다.", search_text ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"검색어 \"{}\"에 대한 결과를 찾을 수 없습니다.", search_text ) ) );
+            mq_mutex.unlock();
         } else {
             std::u16string ret = fmt::format( u"\"{}\"에 대한 검색 결과입니다.", search_text );
 
@@ -1712,7 +1705,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 ret += fmt::format( u"\n{}. {} [Lv{}, 별명 : {}]", i + 1, Util::UTF8toUTF16( result.result( i ).song().title() ), result.result( i ).song().level(), result.result( i ).song().nick1() == "" ? u"없음" : Util::UTF8toUTF16( result.result( i ).song().nick1() ) );
             }
 
-            kakao_sendtext( chatroom_name, ret );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, ret ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1728,15 +1723,21 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         }
         const std::string res_text = std::string( response.body.begin(), response.body.end() );
         if ( res_text == "{}" ) { // 검색 결과가 없는 경우
-            kakao_sendtext( chatroom_name, u"곡정보를 찾을 수 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             // TODO : 검색통해서 ~~~를 찾으시나요? 출력
         } else {
             db::SdvxSong song;
             google::protobuf::util::JsonStringToMessage( res_text.c_str(), &song );
             if ( song.puc_video_url() == "" ) {
-                kakao_sendtext( chatroom_name, u"등록된 영상이 없습니다." );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"등록된 영상이 없습니다." ) );
+                mq_mutex.unlock();
             } else {
-                kakao_sendtext( chatroom_name, Util::UTF8toUTF16( song.puc_video_url() ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, Util::UTF8toUTF16( song.puc_video_url() ) ) );
+                mq_mutex.unlock();
             }
         }
     }
@@ -1771,24 +1772,17 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = u"";
 
             // 혹시 (>점수조회 곡명)인지 확인하기 위해 query_name이 진짜 DB에 있는지 확인
-            http::Request request{ __config.api_endpoint() + "member?chatroom_name=" + Util::URLEncode( chatroom_name ) };
-            auto response = request.send( "GET" );
-            std::string res_text = std::string( response.body.begin(), response.body.end() );
-            if ( res_text == "[]" ) { // DB에 해당 단체방에 대한 정보가 없음
-                kakao_sendtext( chatroom_name, u"지원하지 않는 단체방입니다." );
-            } else {
-                auto splitted = Util::split( Util::UTF8toUTF16( std::string( res_text.begin() + 1, res_text.end() - 1 ) ), "," );
-                if ( std::find( splitted.begin(), splitted.end(), fmt::format( u"\"{}\"", query_name ) ) != splitted.end() ) { // 멤버를 찾음
-                    http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
-                    title_response = title_request.send( "GET" );
-                } else { // 멤버 없는 경우 >점수조회 곡명 명령어를 띄어쓰기 포함하여 사용한 경우.
-                    query_name = name;
-                    reg = std::regex( u8"(>점수조회) ([\\s\\S]+)" );
-                    std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
-                    auto nick = Util::UTF8toUTF16( *( it ) );
-                    http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
-                    title_response = title_request.send( "GET" );
-                }
+            auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+            if ( found ) {
+                http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+                title_response = title_request.send( "GET" );
+            } else { // 멤버 없는 경우 /점수조회 곡명 명령어를 띄어쓰기 포함하여 사용한 경우.
+                query_name = name;
+                reg = std::regex( u8"(>점수조회) ([\\s\\S]+)" );
+                std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+                auto nick = Util::UTF8toUTF16( *( it ) );
+                http::Request title_request{ __config.api_endpoint() + "popn_songs?title=" + Util::URLEncode( nick ) };
+                title_response = title_request.send( "GET" );
             }
         } else if ( std::regex_match( u8msg, std::regex( u8"(>점수조회) ([\\s\\S]+)" ) ) ) { // >점수조회 곡명
             std::regex reg( u8"(>점수조회) ([\\s\\S]+)" );
@@ -1803,7 +1797,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
 
         if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾지 못했습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
             // TODO : 검색으로 ~를 찾으시나요? 출력
         }
@@ -1813,28 +1809,28 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = Util::UTF8toUTF16( std::to_string( song.level() ) );
         }
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        std::regex reg( "//" );
-        std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
 
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
-            http::Request request{ fmt::format( "{}popn_songs/score?name={}&song_id={}", __config.api_endpoint(), Util::URLEncode( query_name ), song.id() ) };
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
+            http::Request request{ fmt::format( "{}popn_songs/score?info_id={}&song_id={}", __config.api_endpoint(), query_m.info_id(), song.id() ) };
             auto response = request.send( "GET" );
             res_text = std::string( response.body.begin(), response.body.end() );
+            std::regex reg( "//" );
             std::sregex_token_iterator it( res_text.begin(), res_text.end(), reg, -1 );
             score = Util::UTF8toUTF16( *( it++ ) );
             grade = Util::UTF8toUTF16( *( it++ ) );
             medal = Util::UTF8toUTF16( *it );
 
             if ( score == u"-1" && grade == u"NP" && medal == u"NP" ) { // Not Played
-                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : ❌NP❌", query_name ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"{}님의 점수 : ❌NP❌", query_name ) ) );
+                mq_mutex.unlock();
                 return RETURN_CODE::OK;
             } else {
                 if ( grade == u"s" ) {
@@ -1878,10 +1874,14 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 } else if ( medal == u"k" ) {
                     medal = u"새싹";
                 }
-                kakao_sendtext( chatroom_name, fmt::format( u"{}님의 점수 : {}{}", query_name, score, medal ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"{}님의 점수 : {}{}", query_name, score, medal ) ) );
+                mq_mutex.unlock();
             }
         } else {
-            kakao_sendtext( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"해당 멤버에 대한 점수조회 권한이 없습니다." ) ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1909,7 +1909,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
 
         if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾지 못했습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
             // TODO : 검색으로 ~를 찾으시나요? 출력
         }
@@ -1919,13 +1921,15 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             level = Util::UTF8toUTF16( std::to_string( song.level() ) );
         }
 
-        kakao_sendtext( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
-                                           u"\n장르 : " + Util::UTF8toUTF16( song.genre() ) +
-                                           u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
-                                           u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
-                                           u"\n곡 길이 : " + ( ( song.duration() == "??:??" ) ? u"정보 없음" : Util::UTF8toUTF16( song.duration() ) ) +
-                                           u"\n노트수 : " + Util::UTF8toUTF16( std::to_string( song.notes() ) ) +
-                                           ( ( song.notes() >= 1537 ) ? u"(짠게)" : ( ( song.notes() <= 1024 ) ? u"(단게)" : u"" ) ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"제목 : " + Util::UTF8toUTF16( song.title() ) +
+                                                             u"\n장르 : " + Util::UTF8toUTF16( song.genre() ) +
+                                                             u"\n레벨 : " + Util::UTF8toUTF16( std::to_string( song.level() ) ) +
+                                                             u"\nBPM : " + Util::UTF8toUTF16( song.bpm() ) +
+                                                             u"\n곡 길이 : " + ( ( song.duration() == "??:??" ) ? u"정보 없음" : Util::UTF8toUTF16( song.duration() ) ) +
+                                                             u"\n노트수 : " + Util::UTF8toUTF16( std::to_string( song.notes() ) ) +
+                                                             ( ( song.notes() >= 1537 ) ? u"(짠게)" : ( ( song.notes() <= 1024 ) ? u"(단게)" : u"" ) ) ) );
+        mq_mutex.unlock();
     }
 
     // 팝픈뮤직 채보
@@ -1952,7 +1956,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::string res_text = std::string( title_response.body.begin(), title_response.body.end() );
 
         if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"곡정보를 찾지 못했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"곡정보를 찾지 못했습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
             // TODO : 검색으로 ~를 찾으시나요? 출력
         }
@@ -1961,12 +1967,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
 
         try {
             auto frame = cv::imread( fmt::format( "songs/popn_songs/{}/chart.png", song.id() ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } catch ( cv::Exception &e ) {
-            kakao_sendtext( chatroom_name, fmt::format( u"이미지를 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"이미지를 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -1978,7 +1985,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             auto u8msg = Util::UTF16toUTF8( msg );
             std::regex reg( Util::UTF16toUTF8( u"(>갱신) ([\\S]+)" ) );
             if ( !std::regex_match( u8msg, reg ) ) {
-                kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >갱신 [이름]" );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >갱신 [이름]" ) );
+                mq_mutex.unlock();
                 return RETURN_CODE::OK;
             } else {
                 std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
@@ -1987,26 +1996,30 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         } else if ( msg == u">갱신" ) {
             query_name = name;
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >갱신 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >갱신 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        kakao_sendtext( chatroom_name, u"갱신을 시작합니다." );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"갱신을 시작합니다." ) );
+        mq_mutex.unlock();
 
         renewal_threads.push_back( std::async(
-            std::launch::async, []( std::string api_endpoint, std::u16string query_name ) -> std::u16string {
+            std::launch::async, []( std::string api_endpoint, std::u16string query_name, std::string chatroom_name ) -> std::pair<std::string, std::u16string> {
                 http::Request renewal_request{ fmt::format( "{}popn_songs/renewal?name={}", api_endpoint, Util::URLEncode( query_name ) ) };
                 auto renewal_response = renewal_request.send( "GET" );
                 auto res_text = std::string( renewal_response.body.begin(), renewal_response.body.end() );
 
                 if ( res_text == "-2" ) {
-                    return u"인포 정보를 찾을 수 없습니다.";
+                    return { chatroom_name, u"인포 정보를 찾을 수 없습니다." };
                 } else if ( res_text == "-1" ) {
-                    return u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요.";
+                    return { chatroom_name, u"갱신 서버의 설정이 만료되었습니다. 관리자에게 문의해주세요." };
                 } else {
-                    return fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) );
+                    return { chatroom_name, fmt::format( u"갱신이 완료되었습니다.\n소요시간 : {}ms", Util::UTF8toUTF16( res_text ) ) };
                 }
             },
-            __config.api_endpoint(), query_name ) );
+            __config.api_endpoint(), query_name, chatroom_name ) );
     }
 
     if ( msg.rfind( u">서든 ", 0 ) == 0 ) {
@@ -2019,63 +2032,66 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             bpm2 = std::stoi( *it );
 
             if ( std::min<>( bpm1, bpm2 ) <= 0 || std::max<>( bpm1, bpm2 ) >= 1000 ) {
-                kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속>0] [고속<1000]" );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속>0] [고속<1000]" ) );
+                mq_mutex.unlock();
             } else {
                 int sudden = 95 - ( 315.0f * std::min<>( bpm1, bpm2 ) / std::max<>( bpm1, bpm2 ) );
-                kakao_sendtext( chatroom_name, fmt::format( u"서든 : {}", sudden ) );
+                mq_mutex.lock();
+                message_queue.push_back( Message( chatroom_name, fmt::format( u"서든 : {}", sudden ) ) );
+                mq_mutex.unlock();
             }
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속] [고속]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >서든 [저속] [고속]" ) );
+            mq_mutex.unlock();
         }
     }
 
     // 팝픈뮤직 팝클래스 목록
     if ( msg == u">팝클목록" ) { // 자신의 팝클목록
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        if ( !m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         http::Request request{ fmt::format( "{}popn_songs/popclass_list?name={}", __config.api_endpoint(), Util::URLEncode( name ) ) };
         auto response = request.send( "GET" );
         auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-        auto bmp = Util::ConvertCVMatToBMP( frame );
-        if ( Util::PasteBMPToClipboard( bmp ) ) {
-            kakao_sendimage( chatroom_name );
-        }
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, frame ) );
+        mq_mutex.unlock();
     } else if ( msg.rfind( u">팝클목록 ", 0 ) == 0 ) {
         auto u8msg = Util::UTF16toUTF8( msg );
         std::regex reg( Util::UTF16toUTF8( u"(>팝클목록) ([\\S]+)" ) );
         if ( !std::regex_match( u8msg, reg ) ) {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >팝클목록 [이름]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >팝클목록 [이름]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
         std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
         auto query_name = Util::UTF8toUTF16( *it );
 
-        http::Request account_request{ fmt::format( "{}member/account?name={}&chatroom_name={}", __config.api_endpoint(), Util::URLEncode( query_name ), Util::URLEncode( chatroom_name ) ) };
-        auto account_response = account_request.send( "GET" );
-        auto res_text = std::string( account_response.body.begin(), account_response.body.end() );
-        if ( res_text == "{}" ) {
-            kakao_sendtext( chatroom_name, u"인포 정보를 찾을 수 없습니다." );
+        auto [ found, query_m ] = find_by_name( query_name, chatroom_name );
+        if ( !found || !query_m.has_info_id() ) {
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"인포 정보를 찾을 수 없습니다." ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
-        reg = std::regex( "//" );
-        it = std::sregex_token_iterator( res_text.begin(), res_text.end(), reg, -1 );
-        auto [ info_id, info_pw, info_svid, permission ] = std::tuple( *it, *( std::next( it, 1 ) ), *( std::next( it, 2 ) ), *( std::next( it, 3 ) ) );
-
-        if ( permission == "1" || query_name == name ) { // permission이 켜져있거나 본인이어야함
+        if ( query_m.info().permission() || query_name == name ) { // permission이 켜져있거나 본인이어야함
             http::Request request{ fmt::format( "{}popn_songs/popclass_list?name={}", __config.api_endpoint(), Util::URLEncode( query_name ) ) };
             auto response = request.send( "GET" );
             auto frame = cv::imdecode( cv::_InputArray( reinterpret_cast<const char *>( response.body.data() ), static_cast<std::streamsize>( response.body.size() ) ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"해당 멤버에 대한 팝클목록 조회 권한이 없습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"해당 멤버에 대한 팝클목록 조회 권한이 없습니다." ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -2085,9 +2101,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         auto res_text = std::string( response.body.begin(), response.body.end() );
         auto splitted = Util::split( Util::UTF8toUTF16( res_text ), "!@#" );
         if ( splitted.size() != 3 ) {
-            kakao_sendtext( chatroom_name, u"오류가 발생했습니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"오류가 발생했습니다." ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, fmt::format( u"📖오늘의 문제📖\n제목 : {}\n레벨 : {}\n\nhttps://www.acmicpc.net/problem/{}", splitted[ 1 ], splitted[ 2 ], splitted[ 0 ] ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"📖오늘의 문제📖\n제목 : {}\n레벨 : {}\n\nhttps://www.acmicpc.net/problem/{}", splitted[ 1 ], splitted[ 2 ], splitted[ 0 ] ) ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -2103,7 +2123,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
             level = Util::UTF8toUTF16( *it );
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /곡추천 [레벨]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : /곡추천 [레벨]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
 
@@ -2140,17 +2162,20 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             diff = u"[XCD]";
         }
 
-        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{} {}{}", Util::UTF8toUTF16( song.title() ), diff, ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, fmt::format( u"🎵추천곡🎵\n{} {}{}", Util::UTF8toUTF16( song.title() ), diff, ( ( song.level() == 18 ) ? ( u"\nPUC 난이도 : " + Util::UTF8toUTF16( ( song.table_puc() == "undefined" ) ? Util::UTF16toUTF8( u"미정" ) : song.table_puc() ) ) : u"" ) ) ) );
+        mq_mutex.unlock();
         try {
             std::string lower_code;
             std::transform( song.code().begin(), song.code().end(), back_inserter( lower_code ), ::tolower );
             auto frame = cv::imread( fmt::format( "songs/{}/jacket.png", lower_code ), cv::IMREAD_UNCHANGED );
-            auto bmp = Util::ConvertCVMatToBMP( frame );
-            if ( Util::PasteBMPToClipboard( bmp ) ) {
-                kakao_sendimage( chatroom_name );
-            }
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, frame ) );
+            mq_mutex.unlock();
         } catch ( cv::Exception &e ) {
-            kakao_sendtext( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, fmt::format( u"자켓을 찾을 수 없습니다.\nErr : {}", Util::UTF8toUTF16( e.what() ) ) ) );
+            mq_mutex.unlock();
         }
     }
 
@@ -2166,7 +2191,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
             level = Util::UTF8toUTF16( *it );
         } else {
-            kakao_sendtext( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >곡추천 [레벨]" );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"잘못된 명령어입니다.\n사용법 : >곡추천 [레벨]" ) );
+            mq_mutex.unlock();
             return RETURN_CODE::OK;
         }
 
@@ -2180,7 +2207,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
         std::u16string diff = u"";
         popndb::PopnSong song = list.popnsongs( Util::rand( 0, list.popnsongs_size() - 1 ) );
 
-        kakao_sendtext( chatroom_name, fmt::format( u"🎵추천곡🎵\n{}\n({})", Util::UTF8toUTF16( song.title() ), Util::UTF8toUTF16( song.nick1() ) ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, fmt::format( u"🎵추천곡🎵\n{}\n({})", Util::UTF8toUTF16( song.title() ), Util::UTF8toUTF16( song.nick1() ) ) ) );
+        mq_mutex.unlock();
     }
 
     if ( msg == u"/오늘의운세" || msg == u"/오늘의 운세" ) {
@@ -2193,75 +2222,9 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
             u"날씨도 좋아서 느낌도 좋아요! 오늘은 산책을 가고 싶은 날이에요!",
             u"오늘은 뭔가 낌새가 이상해요. 뭘 하든 조심히 하는게 좋을 것 같아요.",
             u"슬프네요.. 오늘은 실험결과가 좋지않아 야근을 해야할 것 같아요.." };
-        kakao_sendtext( chatroom_name, fortune[ Util::rand( 0, fortune.size() - 1 ) ] );
-    }
-
-    if ( msg == u"/기린랭킹" ) {
-        http::Request members_request{ fmt::format( "{}member?chatroom_name={}", __config.api_endpoint(), Util::URLEncode( chatroom_name ) ) };
-        auto members_response = members_request.send( "GET" );
-        auto res_text = std::string( members_response.body.begin(), members_response.body.end() );
-        auto res_text_utf16 = Util::UTF8toUTF16( res_text );
-        auto members_with_quote = Util::split( res_text_utf16.substr( 1, res_text_utf16.length() - 2 ), "," );
-
-        if ( members_with_quote.size() == 0 ) {
-            kakao_sendtext( chatroom_name, u"채팅방 정보를 불러올 수 없습니다." );
-            RETURN_CODE::OK;
-        }
-
-        class Turtle {
-        public:
-            Turtle( std::u16string name, int turtle, int zara ) : name( name ), zara( zara ), turtle( turtle ), score( ( turtle + zara ) == 0 ? 0.0 : ( static_cast<float>( turtle ) / ( turtle + zara ) ) ) {}
-            bool operator>( const Turtle &t ) const {
-                if ( score == t.score ) {
-                    if ( turtle == t.turtle ) {
-                        return zara < t.zara;
-                    }
-                    return turtle > t.turtle;
-                }
-                return score > t.score;
-            }
-
-            std::u16string name;
-            int zara;
-            int turtle;
-            float score;
-        };
-
-        std::vector<Turtle> turtle_data;
-
-        auto insert_zero_width_space = []( std::u16string str ) {
-            return std::accumulate( str.begin(), str.end(), std::u16string(), []( std::u16string a, char16_t b ) {
-                return a + u"\u200B" + b;
-            } );
-        };
-
-        for ( auto &member : members_with_quote ) {
-            http::Request data_request{ fmt::format( "{}counter/inventory?name={}", __config.api_endpoint(), Util::URLEncode( member.substr( 1, member.length() - 2 ) ) ) };
-            auto data_response = data_request.send( "GET" );
-            res_text = std::string( data_response.body.begin(), data_response.body.end() );
-            std::regex inven_pattern( "\\{\"1\":([0-9]+),\"2\":([0-9]+),\"3\":([0-9]+),\"6\":([0-9]+),\"7\":([0-9]+),\"8\":([-]*[0-9]+),\"29\":([0-9]+)\\}" );
-            std::vector<int> indices{ 1, 2, 3, 4, 5, 6, 7 };
-            std::sregex_token_iterator it( res_text.begin(), res_text.end(), inven_pattern, indices ), end;
-            std::vector<int> tokens;
-            for ( ; it != end; ++it )
-                tokens.push_back( std::stoi( *it ) );
-            turtle_data.push_back( Turtle( insert_zero_width_space( member.substr( 1, member.length() - 2 ) ), tokens[ 0 ], tokens[ 3 ] ) );
-        }
-        turtle_data.push_back( Turtle( u"기댓값", 1, 99 ) );
-        std::sort( turtle_data.begin(), turtle_data.end(), std::greater<Turtle>() );
-
-        std::u16string result = u"🦒기린랭킹🦒\n";
-        int rank = 0;
-        float prev_score = -1;
-        for ( auto &turtle : turtle_data ) {
-            if ( turtle.name == u"기댓값" ) {
-                result += fmt::format( u"<===== 기댓값 =====>\n" );
-            } else {
-                result += fmt::format( u"{}. {} : {}/{}({:.2f})%\n", prev_score == turtle.score ? rank : ++rank, turtle.name, turtle.turtle, turtle.turtle + turtle.zara, turtle.score * 100 );
-                prev_score = turtle.score;
-            }
-        }
-        kakao_sendtext( chatroom_name, result.substr( 0, result.length() - 1 ) );
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, fortune[ Util::rand( 0, fortune.size() - 1 ) ] ) );
+        mq_mutex.unlock();
     }
 
     if ( msg.rfind( u"/시세 ", 0 ) == 0 ) {
@@ -2296,9 +2259,13 @@ RETURN_CODE execute_command( const std::string &chatroom_name, const std::u16str
                 }( item.price() );
                 result += fmt::format( u"{}. {} : {}\n", i + 1, Util::UTF8toUTF16( item.name() ), Util::UTF8toUTF16( comma_added_price ) );
             }
-            kakao_sendtext( chatroom_name, result );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, result ) );
+            mq_mutex.unlock();
         } else {
-            kakao_sendtext( chatroom_name, u"현재 지원하지 않는 아이템입니다." );
+            mq_mutex.lock();
+            message_queue.push_back( Message( chatroom_name, u"현재 지원하지 않는 아이템입니다." ) );
+            mq_mutex.unlock();
         }
     }
     return RETURN_CODE::OK;

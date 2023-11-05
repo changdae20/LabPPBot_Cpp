@@ -2,10 +2,9 @@
 
 extern config::Config __config;
 
-void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &m, std::chrono::minutes &interval ) {
+void scheduler_boj( std::vector<Message> &message_queue, std::mutex &mq_mutex, std::chrono::minutes &interval ) {
     while ( true ) {
         {
-            std::unique_lock<std::mutex> lock( m );
             http::Request request( fmt::format( "{}boj", __config.api_endpoint() ) );
             auto response = request.send( "GET" );
             auto res_text = std::string( response.body.begin(), response.body.end() );
@@ -90,7 +89,9 @@ void scheduler_boj( std::vector<std::u16string> &scheduler_message, std::mutex &
                     auto solved_info = Util::split( Util::UTF8toUTF16( std::string( solved_info_res.body.begin(), solved_info_res.body.end() ) ), "," );
                     if ( solved_info.size() != 5 )
                         continue;
-                    scheduler_message.push_back( fmt::format( u"** 백준 알리미 **\n{}님이 [{}] {} 문제를 해결했습니다!\n언어 : {}\n시간 : {}ms\n메모리 : {}KB\nRating : {}{} {}", name, level, title, solved_info[ 2 ], solved_info[ 1 ], solved_info[ 0 ], tier_emoji, tier, rating ) );
+                    mq_mutex.lock();
+                    message_queue.push_back( Message( __config.chatroom_name(), fmt::format( u"** 백준 알리미 **\n{}님이 [{}] {} 문제를 해결했습니다!\n언어 : {}\n시간 : {}ms\n메모리 : {}KB\nRating : {}{} {}", name, level, title, solved_info[ 2 ], solved_info[ 1 ], solved_info[ 0 ], tier_emoji, tier, rating ) ) );
+                    mq_mutex.unlock();
                 }
             }
         }
