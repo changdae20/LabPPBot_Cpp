@@ -128,6 +128,22 @@ RETURN_CODE execute_command( std::vector<Message> &message_queue, std::mutex &mq
         name = Util::UTF8toUTF16( m.name() );
     }
 
+        // 개발자 전용 명령어
+    if( !is_groupchat && m.name() == __config.manager_name() && msg.rfind( u"/쿠키 ", 0) == 0 ){
+        auto u8msg = Util::UTF16toUTF8( msg );
+        std::regex reg( Util::UTF16toUTF8( u"(/쿠키) ([\\s\\S]+)" ) );
+        std::sregex_token_iterator it( u8msg.begin(), u8msg.end(), reg, std::vector<int>{ 2 } );
+        auto query = Util::UTF8toUTF16( *it );
+
+        http::Request request{ __config.api_endpoint() + "renewal/setcookie?cookie=" + Util::URLEncode( query ) };
+        auto response = request.send( "GET" );
+        const std::string res_text = std::string( response.body.begin(), response.body.end() );
+
+        mq_mutex.lock();
+        message_queue.push_back( Message( chatroom_name, u"쿠키 세팅 완료" ) );
+        mq_mutex.unlock();
+    }
+
     // 단체방, 방 내부 공개 : /자라, /자라자라, /거북이, /인벤, /기린랭킹
     {
         if ( msg == u"/자라" ) {
