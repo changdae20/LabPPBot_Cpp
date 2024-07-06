@@ -7,4 +7,5 @@ message Config {
     string api_endpoint = 2;
     string storage_server = 3;
     string update_request_room = 4;
+    string manager_name = 5;
 }
